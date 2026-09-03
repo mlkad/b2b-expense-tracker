@@ -514,3 +514,49 @@ func (r *TenancyRepository) Contact(ctx context.Context, tc *postgres.TenantConn
 	}
 	return Contact{Email: row.Email, FullName: row.FullName, MembershipID: membershipID}, nil
 }
+
+// UpdateTenant renames an organisation or changes its default currency.
+func (r *TenancyRepository) UpdateTenant(ctx context.Context, tc *postgres.TenantConn, name string, currency shared.Currency) (tenant.Tenant, error) {
+	row, err := gen.New(tc).UpdateTenant(ctx, gen.UpdateTenantParams{
+		ID:              tc.TenantID(),
+		Name:            name,
+		DefaultCurrency: string(currency),
+	})
+	if err != nil {
+		return tenant.Tenant{}, translate(err)
+	}
+	return tenant.Tenant{
+		ID:                 row.ID,
+		Slug:               row.Slug,
+		Name:               row.Name,
+		Status:             tenant.Status(row.Status),
+		DefaultCurrency:    shared.Currency(row.DefaultCurrency),
+		BillingCustomerRef: row.BillingCustomerRef,
+		CreatedAt:          row.CreatedAt,
+		UpdatedAt:          row.UpdatedAt,
+	}, nil
+}
+
+// SetUserPassword replaces a credential.
+//
+// It runs against the pool rather than a tenant transaction: users are global,
+// and a person who belongs to three organisations has one password.
+func (r *TenancyRepository) SetUserPassword(ctx context.Context, db *postgres.DB, userID uuid.UUID, hash string) error {
+	n, err := gen.New(db.Pool()).UpdateUserPassword(ctx, gen.UpdateUserPasswordParams{
+		ID:           userID,
+		PasswordHash: &hash,
+	})
+	if err != nil {
+		return translate(err)
+	}
+	if n == 0 {
+		return shared.ErrNotFound
+	}
+	return nil
+}
+
+// RevokeAllSessions ends every session a user has.
+func (r *TenancyRepository) RevokeAllSessions(ctx context.Context, db *postgres.DB, userID uuid.UUID) (int64, error) {
+	n, err := gen.New(db.Pool()).RevokeAllRefreshTokensForUser(ctx, userID)
+	return n, translate(err)
+}

@@ -277,26 +277,6 @@ func (q *Queries) GetTenant(ctx context.Context, id uuid.UUID) (Tenant, error) {
 	return i, err
 }
 
-const getTenantBySlug = `-- name: GetTenantBySlug :one
-SELECT id, slug, name, status, default_currency, billing_customer_ref, created_at, updated_at FROM tenants WHERE slug = $1
-`
-
-func (q *Queries) GetTenantBySlug(ctx context.Context, slug string) (Tenant, error) {
-	row := q.db.QueryRow(ctx, getTenantBySlug, slug)
-	var i Tenant
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Name,
-		&i.Status,
-		&i.DefaultCurrency,
-		&i.BillingCustomerRef,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, password_hash, full_name, created_at, updated_at, deleted_at FROM users
 WHERE email = $1 AND deleted_at IS NULL
@@ -643,6 +623,25 @@ func (q *Queries) ResolveActor(ctx context.Context, arg ResolveActorParams) (Res
 		&i.TenantSlug,
 	)
 	return i, err
+}
+
+const revokeAllRefreshTokensForUser = `-- name: RevokeAllRefreshTokensForUser :execrows
+UPDATE refresh_tokens SET revoked_at = now()
+WHERE user_id = $1 AND revoked_at IS NULL
+`
+
+// RevokeAllRefreshTokensForUser ends every session a user has.
+//
+// Called when a password changes. The alternative - keeping other sessions
+// alive - means somebody who changed their password because they believed it
+// was compromised has done nothing about the attacker's live session, which is
+// the situation the change was meant to resolve.
+func (q *Queries) RevokeAllRefreshTokensForUser(ctx context.Context, userID uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, revokeAllRefreshTokensForUser, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const revokeRefreshTokenFamily = `-- name: RevokeRefreshTokenFamily :execrows

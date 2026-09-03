@@ -67,7 +67,8 @@ func newAPI(t *testing.T) (http.Handler, *auth.TokenService) {
 		Files: handler.NewAttachmentHandler(
 			service.NewAttachmentService(scope, fileRepo, expenseRepo, objectStore,
 				5*time.Minute, 5*time.Minute, log)),
-		Health: handler.NewHealthHandler(app, "test"),
+		Account: handler.NewAccountHandler(service.NewAccountService(scope, tenancyRepo, log)),
+		Health:  handler.NewHealthHandler(app, "test"),
 	}
 
 	router := transport.NewRouter(handlers, transport.RouterConfig{

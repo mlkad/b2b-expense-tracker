@@ -167,7 +167,6 @@ type Querier interface {
 	GetMembership(ctx context.Context, arg GetMembershipParams) (Membership, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenHash []byte) (RefreshToken, error)
 	GetTenant(ctx context.Context, id uuid.UUID) (Tenant, error)
-	GetTenantBySlug(ctx context.Context, slug string) (Tenant, error)
 	// ---------------------------------------------------------------------------
 	// Our subscription, projected from the payment gateway (project #1)
 	// ---------------------------------------------------------------------------
@@ -251,6 +250,13 @@ type Querier interface {
 	// by the same check that refuses a suspended member. Two separate checks means
 	// one of them eventually gets skipped on a new endpoint.
 	ResolveActor(ctx context.Context, arg ResolveActorParams) (ResolveActorRow, error)
+	// RevokeAllRefreshTokensForUser ends every session a user has.
+	//
+	// Called when a password changes. The alternative - keeping other sessions
+	// alive - means somebody who changed their password because they believed it
+	// was compromised has done nothing about the attacker's live session, which is
+	// the situation the change was meant to resolve.
+	RevokeAllRefreshTokensForUser(ctx context.Context, userID uuid.UUID) (int64, error)
 	// A presented token that was already used is evidence the token was copied:
 	// the legitimate client rotated it and would not send it again. There is no
 	// way to tell the thief from the victim, so the whole rotation family is

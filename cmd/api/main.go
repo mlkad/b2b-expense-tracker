@@ -215,6 +215,7 @@ func run() error {
 		orgService     = service.NewOrgService(scope, orgRepo, budgetRepo, tenancyRepo, billingRepo)
 		fileService    = service.NewAttachmentService(scope, fileRepo, expenseRepo, objectStore,
 			cfg.Storage.UploadTTL, cfg.Storage.DownloadTTL, log)
+		accountService = service.NewAccountService(scope, tenancyRepo, log)
 	)
 
 	authLimiter := middleware.NewRateLimiter(0.5, 10) // ~30/min per address, burst 10
@@ -231,6 +232,7 @@ func run() error {
 		Billing:  handler.NewBillingHandler(billingService, relay, log),
 		Org:      handler.NewOrgHandler(orgService),
 		Files:    handler.NewAttachmentHandler(fileService),
+		Account:  handler.NewAccountHandler(accountService),
 		Health:   handler.NewHealthHandler(db, cfg.Version),
 	}
 
