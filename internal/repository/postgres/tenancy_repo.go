@@ -458,3 +458,59 @@ func (r *TenancyRepository) PurgeExpiredRefreshTokens(ctx context.Context, db *p
 	}
 	return n, nil
 }
+
+// Contact is somebody to notify.
+type Contact struct {
+	Email        string
+	FullName     *string
+	MembershipID uuid.UUID
+	Role         tenant.Role
+}
+
+// Approvers lists who should be told a claim needs a decision: tenant-wide
+// approvers plus any scoped to the claim's own department.
+//
+// A manager scoped elsewhere is excluded. Telling somebody about a claim they
+// cannot act on trains them to ignore the notification, which is how the ones
+// that matter get missed.
+func (r *TenancyRepository) Approvers(ctx context.Context, tc *postgres.TenantConn, departmentID *uuid.UUID) ([]Contact, error) {
+	rows, err := gen.New(tc).ListApprovers(ctx, gen.ListApproversParams{
+		TenantID:     tc.TenantID(),
+		DepartmentID: departmentID,
+	})
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := make([]Contact, len(rows))
+	for i, row := range rows {
+		out[i] = Contact{Email: row.Email, FullName: row.FullName,
+			MembershipID: row.MembershipID, Role: tenant.Role(row.Role)}
+	}
+	return out, nil
+}
+
+// Finance lists who settles payments and watches budgets.
+func (r *TenancyRepository) Finance(ctx context.Context, tc *postgres.TenantConn) ([]Contact, error) {
+	rows, err := gen.New(tc).ListFinance(ctx, tc.TenantID())
+	if err != nil {
+		return nil, translate(err)
+	}
+	out := make([]Contact, len(rows))
+	for i, row := range rows {
+		out[i] = Contact{Email: row.Email, FullName: row.FullName,
+			MembershipID: row.MembershipID, Role: tenant.Role(row.Role)}
+	}
+	return out, nil
+}
+
+// Contact resolves one membership to an address.
+func (r *TenancyRepository) Contact(ctx context.Context, tc *postgres.TenantConn, membershipID uuid.UUID) (Contact, error) {
+	row, err := gen.New(tc).GetMemberContact(ctx, gen.GetMemberContactParams{
+		TenantID: tc.TenantID(),
+		ID:       membershipID,
+	})
+	if err != nil {
+		return Contact{}, translate(err)
+	}
+	return Contact{Email: row.Email, FullName: row.FullName, MembershipID: membershipID}, nil
+}

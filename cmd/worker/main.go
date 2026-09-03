@@ -22,6 +22,7 @@ import (
 	"github.com/mlkad/b2b-expense-tracker/internal/config"
 	"github.com/mlkad/b2b-expense-tracker/internal/gateway"
 	"github.com/mlkad/b2b-expense-tracker/internal/logger"
+	"github.com/mlkad/b2b-expense-tracker/internal/notify"
 	"github.com/mlkad/b2b-expense-tracker/internal/platform/postgres"
 	repo "github.com/mlkad/b2b-expense-tracker/internal/repository/postgres"
 	"github.com/mlkad/b2b-expense-tracker/internal/service"
@@ -82,6 +83,7 @@ func run() error {
 		expenseRepo = repo.NewExpenseRepository()
 		budgetRepo  = repo.NewBudgetRepository()
 		billingRepo = repo.NewBillingRepository()
+		orgRepo     = repo.NewOrgRepository()
 	)
 	scope := service.NewScope(db, tenancyRepo)
 	billingService := service.NewBillingService(scope, billingRepo, tenancyRepo, gatewayClient, log)
@@ -97,10 +99,13 @@ func run() error {
 	queue := worker.NewClient(redisOpt)
 	defer queue.Close()
 
-	// The notifier is nil in this build. Every job that would send a message
-	// logs what it would have sent instead, so the scheduling, deduplication
-	// and retry behaviour is exercisable end to end without an email provider.
-	handlers := worker.NewHandlers(db, expenseRepo, budgetRepo, tenancyRepo, billingService, queue, nil, log)
+	notifier, err := buildNotifier(cfg, log)
+	if err != nil {
+		return fmt.Errorf("notifications: %w", err)
+	}
+
+	handlers := worker.NewHandlers(db, expenseRepo, budgetRepo, tenancyRepo, orgRepo,
+		billingService, queue, notifier, log)
 
 	server := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: 10,
@@ -209,6 +214,47 @@ func run() error {
 
 	log.Info("worker stopped cleanly")
 	return nil
+}
+
+// buildNotifier wires the mail relay, or a logging stand-in when there is none.
+//
+// The stand-in is deliberately not a silent discard. An operator reading the
+// log can see notifications being produced and where they would have gone,
+// which is the difference between "mail is not configured" and "the
+// notification code is broken".
+func buildNotifier(cfg *config.Config, log *slog.Logger) (worker.Notifier, error) {
+	var sender notify.Sender
+
+	if cfg.Mail.Enabled {
+		smtpSender, err := notify.NewSMTPSender(notify.SMTPConfig{
+			Host:     cfg.Mail.Host,
+			Port:     cfg.Mail.Port,
+			Username: cfg.Mail.Username,
+			Password: cfg.Mail.Password,
+			From:     notify.Recipient{Name: cfg.Mail.FromName, Email: cfg.Mail.FromAddr},
+			TLS:      notify.TLSMode(cfg.Mail.TLS),
+		})
+		if err != nil {
+			return nil, err
+		}
+		sender = smtpSender
+		log.Info("mail relay configured",
+			slog.String("host", cfg.Mail.Host),
+			slog.Int("port", cfg.Mail.Port),
+			slog.String("tls", cfg.Mail.TLS))
+	} else {
+		log.Warn("no mail relay configured; notifications will be logged instead of sent")
+		sender = notify.LoggingSender{Log: func(ctx context.Context, m notify.Message) {
+			// Recipient count rather than addresses. The addresses are already
+			// in the database, and a log aggregator is a much wider audience.
+			log.InfoContext(ctx, "notification not sent (no relay configured)",
+				slog.String("category", m.Category),
+				slog.String("subject", m.Subject),
+				slog.Int("recipients", len(m.To)))
+		}}
+	}
+
+	return notify.New(sender, cfg.Mail.DashboardURL)
 }
 
 // asynqLogger adapts slog to the interface Asynq expects, so the worker's

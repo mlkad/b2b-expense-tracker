@@ -155,3 +155,46 @@ WHERE family_id = @family_id AND revoked_at IS NULL;
 
 -- name: DeleteExpiredRefreshTokens :execrows
 DELETE FROM refresh_tokens WHERE expires_at < now() - @grace::interval;
+
+-- ---------------------------------------------------------------------------
+-- Notification recipients
+-- ---------------------------------------------------------------------------
+
+-- ListApprovers finds who should be told a claim needs a decision.
+--
+-- Tenant-wide approvers plus the ones scoped to the claim's own department.
+-- A manager scoped elsewhere is deliberately excluded: telling them about a
+-- claim they cannot act on trains people to ignore the notification, which is
+-- how the ones that matter get missed.
+--
+-- Suspended and invited memberships are excluded because neither can act, and
+-- soft-deleted users because their address may have been reassigned.
+-- name: ListApprovers :many
+SELECT u.email, u.full_name, m.id AS membership_id, m.role
+  FROM memberships m
+  JOIN users u ON u.id = m.user_id
+ WHERE m.tenant_id = @tenant_id
+   AND m.status = 'active'
+   AND u.deleted_at IS NULL
+   AND m.role IN ('owner', 'admin', 'manager')
+   AND (m.department_id IS NULL
+        OR sqlc.narg('department_id')::uuid IS NULL
+        OR m.department_id = sqlc.narg('department_id'))
+ ORDER BY u.email;
+
+-- ListFinance finds who settles payments and watches budgets.
+-- name: ListFinance :many
+SELECT u.email, u.full_name, m.id AS membership_id, m.role
+  FROM memberships m
+  JOIN users u ON u.id = m.user_id
+ WHERE m.tenant_id = @tenant_id
+   AND m.status = 'active'
+   AND u.deleted_at IS NULL
+   AND m.role IN ('owner', 'finance')
+ ORDER BY u.email;
+
+-- name: GetMemberContact :one
+SELECT u.email, u.full_name
+  FROM memberships m
+  JOIN users u ON u.id = m.user_id
+ WHERE m.tenant_id = @tenant_id AND m.id = @id AND u.deleted_at IS NULL;
