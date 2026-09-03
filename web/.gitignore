@@ -1,0 +1,12 @@
+node_modules/
+dist/
+screenshots/
+
+*.local
+.env
+.env.*
+!.env.example
+
+# Playwright's browser cache lives outside the project, but its traces do not.
+test-results/
+playwright-report/

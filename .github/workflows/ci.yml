@@ -111,6 +111,37 @@ jobs:
             spec, _ = read_from_filename('api/openapi.json'); validate(spec); \
             print('api/openapi.json is a valid OpenAPI 3.1 document')"
 
+  web:
+    name: Dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test
+
+      # A build failure that only appears in production is the one class of
+      # error typecheck does not catch - a bad import path, a missing asset.
+      - name: Build
+        run: npm run build
+
   security:
     name: Vulnerability scan
     runs-on: ubuntu-latest

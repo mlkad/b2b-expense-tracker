@@ -155,6 +155,29 @@ openapi-validate: ## Validate api/openapi.json with an independent validator
 	  || echo "install the validator first: pip3 install openapi-spec-validator"
 
 # -----------------------------------------------------------------------------
+# Dashboard
+# -----------------------------------------------------------------------------
+
+.PHONY: web-install
+web-install: ## Install the dashboard's dependencies
+	cd web && npm ci || (cd web && npm install)
+
+.PHONY: web
+web: ## Run the dashboard against the local API
+	cd web && npm run dev
+
+.PHONY: web-check
+web-check: ## Typecheck, lint and unit test the dashboard
+	cd web && npm run check
+
+.PHONY: web-smoke
+web-smoke: ## Drive the running dashboard with a real browser
+	# Needs `make run` and `make web` in other shells. The unit tests stub
+	# fetch, which proves the client's logic and nothing about whether the
+	# thing works.
+	cd web && npm run smoke -- http://localhost:5173 ./screenshots
+
+# -----------------------------------------------------------------------------
 # Containers
 # -----------------------------------------------------------------------------
 
