@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/shared"
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/tenant"
@@ -419,4 +420,24 @@ func toDomainRefreshToken(row gen.RefreshToken) RefreshToken {
 		UsedAt:    row.UsedAt,
 		RevokedAt: row.RevokedAt,
 	}
+}
+
+// PurgeExpiredRefreshTokens deletes tokens that expired longer ago than the
+// grace period.
+//
+// The grace exists so the table still answers "was this token revoked, or did
+// it simply expire" for a while after the fact, which is what an investigation
+// into a suspected session theft needs. Without this sweep the table grows
+// without bound: every login writes a row and nothing ever removes one, so the
+// index behind the rotation lookup degrades in proportion to the product's
+// entire history of sign-ins.
+func (r *TenancyRepository) PurgeExpiredRefreshTokens(ctx context.Context, db *postgres.DB, grace time.Duration) (int64, error) {
+	n, err := gen.New(db.Pool()).DeleteExpiredRefreshTokens(ctx, pgtype.Interval{
+		Microseconds: grace.Microseconds(),
+		Valid:        true,
+	})
+	if err != nil {
+		return 0, translate(err)
+	}
+	return n, nil
 }

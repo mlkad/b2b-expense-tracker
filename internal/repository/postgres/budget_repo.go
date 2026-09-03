@@ -156,28 +156,3 @@ func NextChargeDate(from time.Time, cadence string) time.Time {
 		return from.AddDate(0, 1, 0)
 	}
 }
-
-// TenantsWithBilling lists tenants that have a gateway customer reference, for
-// the reconciliation sweep.
-func (r *BudgetRepository) TenantsWithBilling(ctx context.Context, tc *postgres.TenantConn) (map[uuid.UUID]string, error) {
-	rows, err := tc.Query(ctx,
-		`SELECT id, billing_customer_ref FROM tenants
-		  WHERE billing_customer_ref IS NOT NULL AND status <> 'cancelled'`)
-	if err != nil {
-		return nil, translate(err)
-	}
-	defer rows.Close()
-
-	out := make(map[uuid.UUID]string)
-	for rows.Next() {
-		var (
-			id  uuid.UUID
-			ref string
-		)
-		if err := rows.Scan(&id, &ref); err != nil {
-			return nil, translate(err)
-		}
-		out[id] = ref
-	}
-	return out, translate(rows.Err())
-}

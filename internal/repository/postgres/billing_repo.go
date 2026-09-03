@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/billing"
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/shared"
@@ -192,19 +193,90 @@ func (r *BillingRepository) LinkBillingCustomer(ctx context.Context, tc *postgre
 	return nil
 }
 
-// SetTenantStatus suspends or restores a tenant. Called by the worker when a
-// subscription reaches a terminal unpaid state, not by the relay directly:
-// suspension is a decision with a grace period behind it, not a mechanical
-// consequence of one event.
-func (r *BillingRepository) SetTenantStatus(ctx context.Context, db *postgres.DB, tenantID uuid.UUID, status string) error {
-	return db.WithSystemTx(ctx, postgres.Binding{TenantID: tenantID}, "change tenant status from billing state",
+// StuckDelivery is a relay event reclaimed by the sweeper: it was claimed but
+// never settled, so the process handling it died mid-flight.
+type StuckDelivery struct {
+	EventID   string
+	EventType string
+	Payload   []byte
+	Attempts  int32
+}
+
+// ReclaimStuck takes a batch of deliveries left in 'processing' past the
+// handler's deadline.
+//
+// The receiver claims an event before it processes it, so a process that dies
+// between those two steps leaves a row that will never settle - and because
+// the claim is the idempotency gate, the gateway's redelivery of that same
+// event is then discarded as a duplicate. Without this sweep, one crash at the
+// wrong moment silently drops a subscription change forever.
+//
+// FOR UPDATE SKIP LOCKED inside the statement means two sweepers take disjoint
+// batches, and bumping attempts is what lets the caller give up on an event
+// that fails every time rather than retrying it until the end of the world.
+func (r *BillingRepository) ReclaimStuck(ctx context.Context, db *postgres.DB, staleAfter time.Duration, batch int32) ([]StuckDelivery, error) {
+	var out []StuckDelivery
+
+	err := db.WithSystemTx(ctx, postgres.Binding{}, "reclaim stuck billing relay deliveries",
 		func(ctx context.Context, tc *postgres.TenantConn) error {
-			_, err := gen.New(tc).SetTenantStatus(ctx, gen.SetTenantStatusParams{
-				ID:     tenantID,
-				Status: gen.TenantStatus(status),
+			rows, err := gen.New(tc).ReclaimStuckBillingEvents(ctx, gen.ReclaimStuckBillingEventsParams{
+				StaleAfter: interval(staleAfter),
+				BatchSize:  batch,
 			})
-			return translate(err)
+			if err != nil {
+				return translate(err)
+			}
+			out = make([]StuckDelivery, len(rows))
+			for i, row := range rows {
+				out[i] = StuckDelivery{
+					EventID:   row.EventID,
+					EventType: row.EventType,
+					Payload:   row.Payload,
+					Attempts:  row.Attempts,
+				}
+			}
+			return nil
 		})
+	return out, err
+}
+
+// TenantsWithBilling lists tenants that have a gateway customer reference.
+//
+// It lives here rather than on the budget repository - where it was originally
+// written - because it is a billing concern and its only caller is the
+// reconciliation sweep.
+func (r *BillingRepository) TenantsWithBilling(ctx context.Context, db *postgres.DB) (map[uuid.UUID]string, error) {
+	out := make(map[uuid.UUID]string)
+
+	err := db.WithSystemTx(ctx, postgres.Binding{ReadOnly: true}, "enumerate tenants for billing reconciliation",
+		func(ctx context.Context, tc *postgres.TenantConn) error {
+			rows, err := tc.Query(ctx,
+				`SELECT id, billing_customer_ref FROM tenants
+				  WHERE billing_customer_ref IS NOT NULL AND status <> 'cancelled'`)
+			if err != nil {
+				return translate(err)
+			}
+			defer rows.Close()
+
+			for rows.Next() {
+				var (
+					id  uuid.UUID
+					ref string
+				)
+				if err := rows.Scan(&id, &ref); err != nil {
+					return translate(err)
+				}
+				out[id] = ref
+			}
+			return translate(rows.Err())
+		})
+	return out, err
+}
+
+// interval converts a Go duration into the pgtype the generated code expects.
+// Microseconds is PostgreSQL's own resolution for the type, so nothing is lost.
+func interval(d time.Duration) pgtype.Interval {
+	return pgtype.Interval{Microseconds: d.Microseconds(), Valid: true}
 }
 
 // EncodePayload prepares an event body for the ledger. The raw bytes are

@@ -86,16 +86,21 @@ func run() error {
 	scope := service.NewScope(db, tenancyRepo)
 	billingService := service.NewBillingService(scope, billingRepo, tenancyRepo, gatewayClient, log)
 
-	// The notifier is nil in this build. Every job that would send a message
-	// logs what it would have sent instead, so the scheduling, deduplication
-	// and retry behaviour is exercisable end to end without an email provider.
-	handlers := worker.NewHandlers(db, expenseRepo, budgetRepo, billingService, nil, log)
-
 	redisOpt := asynq.RedisClientOpt{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	}
+
+	// The worker is also a producer: the reconciliation sweep fans out into one
+	// job per tenant.
+	queue := worker.NewClient(redisOpt)
+	defer queue.Close()
+
+	// The notifier is nil in this build. Every job that would send a message
+	// logs what it would have sent instead, so the scheduling, deduplication
+	// and retry behaviour is exercisable end to end without an email provider.
+	handlers := worker.NewHandlers(db, expenseRepo, budgetRepo, tenancyRepo, billingService, queue, nil, log)
 
 	server := asynq.NewServer(redisOpt, asynq.Config{
 		Concurrency: 10,
@@ -143,10 +148,34 @@ func run() error {
 		Location: time.UTC,
 		Logger:   asynqLogger{log},
 	})
-	if _, err := scheduler.Register("15 2 * * *",
-		asynq.NewTask(worker.TaskRecurringSweep, nil),
-		asynq.Queue(worker.QueueDefault)); err != nil {
-		return fmt.Errorf("schedule recurring sweep: %w", err)
+	//
+	// The relay sweep runs often because what it recovers is invisible: a
+	// delivery stuck in 'processing' blocks every redelivery of that event, so
+	// the subscription silently stops updating and nothing reports it. The
+	// others are daily, staggered so they do not contend for the same
+	// connections.
+	periodic := []struct {
+		cron  string
+		task  string
+		queue string
+	}{
+		{"*/10 * * * *", worker.TaskRelaySweep, worker.QueueDefault},
+		{"15 2 * * *", worker.TaskRecurringSweep, worker.QueueDefault},
+		{"40 3 * * *", worker.TaskBillingReconcileSweep, worker.QueueLow},
+		{"20 4 * * *", worker.TaskSessionCleanup, worker.QueueLow},
+	}
+	for _, p := range periodic {
+		if _, err := scheduler.Register(p.cron,
+			asynq.NewTask(p.task, nil),
+			asynq.Queue(p.queue),
+			// One in flight at a time: a sweep still running when the next
+			// tick fires must not be doubled up, since both copies would claim
+			// overlapping batches.
+			asynq.TaskID(p.task),
+		); err != nil {
+			return fmt.Errorf("schedule %s: %w", p.task, err)
+		}
+		log.Info("scheduled", slog.String("task", p.task), slog.String("cron", p.cron))
 	}
 
 	go func() {

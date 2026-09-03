@@ -30,6 +30,17 @@ const (
 	TaskBillingReconcile  = "billing:reconcile"
 	TaskRecurringSweep    = "recurring:sweep"
 	TaskRelaySweep        = "billing:relay_sweep"
+
+	// TaskBillingReconcileSweep fans out one TaskBillingReconcile per tenant.
+	// The fan-out is a separate task rather than a loop inside one job so that
+	// a single tenant whose gateway call fails is retried on its own, instead
+	// of taking the whole sweep down with it and leaving the tenants after it
+	// in the list unchecked.
+	TaskBillingReconcileSweep = "billing:reconcile_sweep"
+
+	// TaskSessionCleanup removes refresh tokens that expired long enough ago
+	// to be of no further forensic use.
+	TaskSessionCleanup = "auth:session_cleanup"
 )
 
 // Queues, in priority order. Asynq weights them, so a backlog of nightly
@@ -124,6 +135,25 @@ func (c *Client) CheckBudgetThreshold(ctx context.Context, tenantID uuid.UUID, d
 		asynq.MaxRetry(3),
 		asynq.ProcessIn(2*time.Minute),
 		asynq.TaskID(fmt.Sprintf("%s:%s:%s", TaskBudgetThreshold, tenantID, deref(departmentID))),
+	)
+	if err != nil && isDuplicate(err) {
+		return nil
+	}
+	return err
+}
+
+// EnqueuePeriodic submits one of the scheduled sweeps by name. The scheduler
+// enqueues these on a cron, and this exists so a sweep can also be triggered
+// by hand during an incident without a second code path.
+func (c *Client) EnqueuePeriodic(ctx context.Context, taskType string) error {
+	_, err := c.inner.EnqueueContext(ctx,
+		asynq.NewTask(taskType, nil),
+		asynq.Queue(QueueLow),
+		asynq.MaxRetry(2),
+		// One in flight at a time. A sweep already running when the next cron
+		// tick fires should be left alone rather than doubled up, since both
+		// copies would claim overlapping batches.
+		asynq.TaskID(taskType),
 	)
 	if err != nil && isDuplicate(err) {
 		return nil
