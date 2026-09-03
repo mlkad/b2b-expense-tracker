@@ -143,6 +143,26 @@ tidy: ## Tidy and verify the module
 .PHONY: check
 check: fmt vet test ## Format, vet and unit test - what CI runs first
 
+# -----------------------------------------------------------------------------
+# Containers
+# -----------------------------------------------------------------------------
+
+.PHONY: images
+images: ## Build the api, worker and migrate images
+	docker build --target api     --build-arg VERSION=$(VERSION) -t expense-api:$(VERSION)     .
+	docker build --target worker  --build-arg VERSION=$(VERSION) -t expense-worker:$(VERSION)  .
+	docker build --target migrate --build-arg VERSION=$(VERSION) -t expense-migrate:$(VERSION) .
+	@docker images --format '  {{.Repository}}:{{.Tag}}\t{{.Size}}' | grep '^  expense-'
+
+.PHONY: stack
+stack: ## Run the whole service in containers against the local dependencies
+	docker compose -f docker-compose.yml -f docker-compose.stack.yml up -d --build
+	@docker compose -f docker-compose.yml -f docker-compose.stack.yml ps
+
+.PHONY: stack-down
+stack-down: ## Stop the containerised service, leaving the dependencies running
+	docker compose -f docker-compose.yml -f docker-compose.stack.yml down
+
 .PHONY: tools
 tools: ## Install the pinned developer tools
 	go install github.com/pressly/goose/v3/cmd/goose@latest

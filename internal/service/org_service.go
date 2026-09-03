@@ -20,15 +20,25 @@ import (
 // something. It is a 402 rather than a 403: the caller has the authority, and
 // the fix is a plan change rather than a permission change.
 type ErrPlanLimit struct {
-	Resource string
-	Limit    int
-	Current  int
-	Plan     billing.PlanCode
+	// Singular and Plural are both carried rather than derived by trimming an
+	// "s". It happens to work for every noun here today, and it is the kind of
+	// shortcut that produces "1 tracked subscriptions" the first time somebody
+	// adds a resource it does not fit.
+	Singular string
+	Plural   string
+
+	Limit   int
+	Current int
+	Plan    billing.PlanCode
 }
 
 func (e *ErrPlanLimit) Error() string {
-	return fmt.Sprintf("the %s plan allows %d %s and this organisation has %d; upgrade to add more",
-		e.Plan, e.Limit, e.Resource, e.Current)
+	noun := e.Plural
+	if e.Limit == 1 {
+		noun = e.Singular
+	}
+	return fmt.Sprintf("the %s plan includes %d %s and this organisation already has %d; upgrade to add more",
+		e.Plan, e.Limit, noun, e.Current)
 }
 
 type OrgService struct {
@@ -66,7 +76,7 @@ func NewOrgService(
 func (s *OrgService) enforceLimit(
 	ctx context.Context,
 	tc *postgres.TenantConn,
-	resource string,
+	singular, plural string,
 	limitOf func(billing.Limits) int,
 	countOf func(context.Context, *postgres.TenantConn) (int, error),
 ) error {
@@ -89,7 +99,8 @@ func (s *OrgService) enforceLimit(
 	}
 
 	return &ErrPlanLimit{
-		Resource: resource,
+		Singular: singular,
+		Plural:   plural,
 		Limit:    limit,
 		Current:  current,
 		Plan:     entitlement.EffectivePlan(),
@@ -110,7 +121,7 @@ func (s *OrgService) CreateDepartment(ctx context.Context, subject auth.Subject,
 		if err := draft.Validate(); err != nil {
 			return err
 		}
-		if err := s.enforceLimit(ctx, tc, "departments",
+		if err := s.enforceLimit(ctx, tc, "department", "departments",
 			func(l billing.Limits) int { return l.Departments },
 			s.orgs.CountLiveDepartments); err != nil {
 			return err
@@ -309,7 +320,7 @@ func (s *OrgService) CreateVendorSubscription(ctx context.Context, subject auth.
 		if err := draft.Validate(s.now()); err != nil {
 			return err
 		}
-		if err := s.enforceLimit(ctx, tc, "tracked subscriptions",
+		if err := s.enforceLimit(ctx, tc, "tracked subscription", "tracked subscriptions",
 			func(l billing.Limits) int { return l.VendorSubscriptions },
 			s.orgs.CountActiveVendorSubscriptions); err != nil {
 			return err
@@ -437,7 +448,7 @@ func (s *OrgService) InviteMember(
 		if !actor.Role.OutranksStrictly(role) {
 			return fmt.Errorf("%w: you may only invite members below your own role", shared.ErrForbidden)
 		}
-		if err := s.enforceLimit(ctx, tc, "seats",
+		if err := s.enforceLimit(ctx, tc, "seat", "seats",
 			func(l billing.Limits) int { return l.Seats },
 			s.orgs.CountActiveMembers); err != nil {
 			return err

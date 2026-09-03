@@ -4,7 +4,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,13 +30,67 @@ import (
 	"github.com/mlkad/b2b-expense-tracker/internal/worker"
 )
 
+// healthcheck runs the container probe instead of the server.
+//
+// The runtime image is built FROM scratch: no shell, no curl, nothing that a
+// conventional `CMD-SHELL curl -f localhost/readyz` could use. The binary
+// probes itself instead, which also means the probe and the server agree about
+// which port and which path to use because both read the same configuration.
+var healthcheck = flag.Bool("healthcheck", false,
+	"probe the local readiness endpoint and exit 0 if it is healthy; for container health checks")
+
 func main() {
-	// main does nothing but call run and translate its error into an exit
-	// code, so that every defer in run actually executes - os.Exit skips them.
+	flag.Parse()
+
+	if *healthcheck {
+		if err := probe(); err != nil {
+			fmt.Fprintf(os.Stderr, "unhealthy: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// main otherwise does nothing but call run and translate its error into an
+	// exit code, so that every defer in run actually executes - os.Exit skips
+	// them.
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// probe asks the running server whether it is ready.
+//
+// It reads HTTP_ADDR so the probe follows a non-default port, and connects to
+// the loopback interface rather than to the address the server binds - which is
+// often ":8080", meaning every interface, and is not a thing a client can dial.
+func probe() error {
+	addr := os.Getenv("HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("HTTP_ADDR %q is not host:port: %w", addr, err)
+	}
+
+	// Deliberately short. A probe that hangs is a container that is neither
+	// healthy nor restarted, which is the worst of both.
+	client := &http.Client{Timeout: 3 * time.Second}
+
+	resp, err := client.Get("http://127.0.0.1:" + port + "/readyz")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	// The body is drained so the connection can be reused rather than reset,
+	// which keeps a failing probe from filling the server's logs with EOFs.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("readiness endpoint returned %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func run() error {
