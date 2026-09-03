@@ -12,7 +12,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.25"
+  # Pinned to a patch release, not a minor line. The stdlib is a dependency
+  # like any other, and "1.26" would float onto whichever patch the runner
+  # happens to cache - which is how a green pipeline silently starts building
+  # against a toolchain with known CVEs. govulncheck below is the check that
+  # catches it, and this is the line that fixes it.
+  GO_VERSION: "1.26.6"
 
 jobs:
   build:
