@@ -1,0 +1,19 @@
+# Build output
+/bin/
+*.exe
+
+# Local environment. .env.example is committed; .env is not.
+.env
+.env.*
+!.env.example
+
+# Test and coverage artefacts
+*.out
+*.test
+coverage.html
+
+# Editors
+.idea/
+.vscode/
+*.swp
+.DS_Store
