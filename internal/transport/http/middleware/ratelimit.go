@@ -87,14 +87,31 @@ func (rl *RateLimiter) Allow(key string) (ok bool, retryAfter time.Duration) {
 // Without it the map is an unbounded allocation keyed by remote address, which
 // is a memory exhaustion vector that costs an attacker one packet per entry.
 func (rl *RateLimiter) Sweep() {
-	cutoff := rl.now().Add(-rl.ttl)
+	now := rl.now()
+	cutoff := now.Add(-rl.ttl)
 
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	for key, b := range rl.buckets {
-		// A full bucket that is also stale is indistinguishable from one that
-		// never existed, so dropping it changes nothing.
-		if b.last.Before(cutoff) && b.tokens >= rl.capacity {
+		if !b.last.Before(cutoff) {
+			continue
+		}
+
+		// The refill is projected forward rather than read from b.tokens.
+		//
+		// Tokens are only added inside Allow, so a key that was used once and
+		// never again keeps whatever count it had at that moment - which for a
+		// burst of one is zero, forever. Comparing the stored value against the
+		// capacity therefore never matches, and the map grows without bound:
+		// one request per address is enough to pin an entry for the lifetime of
+		// the process, which is the memory exhaustion this sweep exists to
+		// prevent.
+		//
+		// A bucket that would have refilled to capacity by now is
+		// indistinguishable from one that never existed, so dropping it hands
+		// the client nothing they did not already have.
+		refilled := b.tokens + now.Sub(b.last).Seconds()*rl.rate
+		if refilled >= rl.capacity {
 			delete(rl.buckets, key)
 		}
 	}
