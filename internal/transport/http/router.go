@@ -54,6 +54,7 @@ type Handlers struct {
 	Exports  *handler.ExportHandler
 	Billing  *handler.BillingHandler
 	Org      *handler.OrgHandler
+	Files    *handler.AttachmentHandler
 	Health   *handler.HealthHandler
 }
 
@@ -149,6 +150,10 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 			r.Get("/expenses/pending", h.Expenses.PendingQueue)
 			r.Get("/expenses/{id}", h.Expenses.Get)
 			r.Get("/expenses/{id}/history", h.Expenses.History)
+			r.Get("/expenses/{id}/attachments", h.Files.List)
+			// A redirect to a signed URL rather than a proxied download: the
+			// bytes never come through this service.
+			r.Get("/attachments/{id}/download", h.Files.Download)
 
 			r.Get("/billing/entitlement", h.Billing.Entitlement)
 
@@ -203,6 +208,10 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 
 				r.Post("/vendor-subscriptions", h.Org.CreateVendorSubscription)
 				r.Patch("/vendor-subscriptions/{id}", h.Org.UpdateVendorSubscription)
+
+				r.Post("/expenses/{id}/attachments/presign", h.Files.PrepareUpload)
+				r.Post("/expenses/{id}/attachments", h.Files.ConfirmUpload)
+				r.Delete("/attachments/{id}", h.Files.Delete)
 
 				r.Post("/members", h.Org.InviteMember)
 				r.Patch("/members/{id}", h.Org.UpdateMember)

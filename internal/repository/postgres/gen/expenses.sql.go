@@ -129,6 +129,23 @@ func (q *Queries) AppendExpenseEvent(ctx context.Context, arg AppendExpenseEvent
 	return i, err
 }
 
+const countExpenseAttachments = `-- name: CountExpenseAttachments :one
+SELECT count(*) FROM expense_attachments
+WHERE tenant_id = $1 AND expense_id = $2
+`
+
+type CountExpenseAttachmentsParams struct {
+	TenantID  uuid.UUID
+	ExpenseID uuid.UUID
+}
+
+func (q *Queries) CountExpenseAttachments(ctx context.Context, arg CountExpenseAttachmentsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countExpenseAttachments, arg.TenantID, arg.ExpenseID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countExpensesByStatus = `-- name: CountExpensesByStatus :many
 
 SELECT status, count(*) AS claim_count, coalesce(sum(amount_minor), 0)::bigint AS total_minor
@@ -274,6 +291,27 @@ func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (E
 	return i, err
 }
 
+const deleteExpenseAttachment = `-- name: DeleteExpenseAttachment :execrows
+DELETE FROM expense_attachments
+WHERE tenant_id = $1 AND id = $2
+`
+
+type DeleteExpenseAttachmentParams struct {
+	TenantID uuid.UUID
+	ID       uuid.UUID
+}
+
+// The RLS policy expense_attachments_delete_drafts_only refuses this for any
+// claim that is no longer a draft, so the predicate is not repeated here: the
+// policy is the guarantee and duplicating it would invite the two to drift.
+func (q *Queries) DeleteExpenseAttachment(ctx context.Context, arg DeleteExpenseAttachmentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpenseAttachment, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteExpenseDraft = `-- name: DeleteExpenseDraft :execrows
 DELETE FROM expenses
 WHERE tenant_id = $1 AND id = $2 AND status = 'draft'
@@ -331,6 +369,63 @@ func (q *Queries) GetExpense(ctx context.Context, arg GetExpenseParams) (Expense
 		&i.SourceSubscriptionID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getExpenseAttachment = `-- name: GetExpenseAttachment :one
+
+SELECT a.id, a.tenant_id, a.expense_id, a.object_key, a.filename, a.content_type, a.size_bytes, a.checksum, a.uploaded_by, a.created_at, e.status AS expense_status, e.submitter_id AS expense_submitter_id,
+       e.department_id AS expense_department_id
+  FROM expense_attachments a
+  JOIN expenses e ON e.id = a.expense_id AND e.tenant_id = a.tenant_id
+ WHERE a.tenant_id = $1 AND a.id = $2
+`
+
+type GetExpenseAttachmentParams struct {
+	TenantID uuid.UUID
+	ID       uuid.UUID
+}
+
+type GetExpenseAttachmentRow struct {
+	ID                  uuid.UUID
+	TenantID            uuid.UUID
+	ExpenseID           uuid.UUID
+	ObjectKey           string
+	Filename            string
+	ContentType         string
+	SizeBytes           int64
+	Checksum            []byte
+	UploadedBy          uuid.UUID
+	CreatedAt           time.Time
+	ExpenseStatus       ExpenseStatus
+	ExpenseSubmitterID  uuid.UUID
+	ExpenseDepartmentID *uuid.UUID
+}
+
+// SpendByStatus and SpendByDepartment back the dashboard's summary strip.
+//
+// Both are aggregates over the same rows the list endpoint pages through, so
+// they are answered from expenses_budget_rollup_idx rather than by counting
+// what the client already has - a dashboard that summed its first page would
+// report the wrong total on every tenant with more than one page.
+func (q *Queries) GetExpenseAttachment(ctx context.Context, arg GetExpenseAttachmentParams) (GetExpenseAttachmentRow, error) {
+	row := q.db.QueryRow(ctx, getExpenseAttachment, arg.TenantID, arg.ID)
+	var i GetExpenseAttachmentRow
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.ExpenseID,
+		&i.ObjectKey,
+		&i.Filename,
+		&i.ContentType,
+		&i.SizeBytes,
+		&i.Checksum,
+		&i.UploadedBy,
+		&i.CreatedAt,
+		&i.ExpenseStatus,
+		&i.ExpenseSubmitterID,
+		&i.ExpenseDepartmentID,
 	)
 	return i, err
 }

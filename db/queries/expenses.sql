@@ -216,3 +216,21 @@ ORDER BY created_at ASC;
 -- they are answered from expenses_budget_rollup_idx rather than by counting
 -- what the client already has - a dashboard that summed its first page would
 -- report the wrong total on every tenant with more than one page.
+
+-- name: GetExpenseAttachment :one
+SELECT a.*, e.status AS expense_status, e.submitter_id AS expense_submitter_id,
+       e.department_id AS expense_department_id
+  FROM expense_attachments a
+  JOIN expenses e ON e.id = a.expense_id AND e.tenant_id = a.tenant_id
+ WHERE a.tenant_id = @tenant_id AND a.id = @id;
+
+-- The RLS policy expense_attachments_delete_drafts_only refuses this for any
+-- claim that is no longer a draft, so the predicate is not repeated here: the
+-- policy is the guarantee and duplicating it would invite the two to drift.
+-- name: DeleteExpenseAttachment :execrows
+DELETE FROM expense_attachments
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: CountExpenseAttachments :one
+SELECT count(*) FROM expense_attachments
+WHERE tenant_id = @tenant_id AND expense_id = @expense_id;

@@ -1,0 +1,385 @@
+package service
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"log/slog"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/mlkad/b2b-expense-tracker/internal/auth"
+	"github.com/mlkad/b2b-expense-tracker/internal/domain/expense"
+	"github.com/mlkad/b2b-expense-tracker/internal/domain/shared"
+	"github.com/mlkad/b2b-expense-tracker/internal/domain/tenant"
+	"github.com/mlkad/b2b-expense-tracker/internal/platform/postgres"
+	repo "github.com/mlkad/b2b-expense-tracker/internal/repository/postgres"
+	"github.com/mlkad/b2b-expense-tracker/internal/storage"
+)
+
+// ErrStorageDisabled means the deployment has no object store configured, so
+// receipts cannot be accepted. It is a 501 rather than a 500: the request is
+// well formed and the feature simply is not present here.
+var ErrStorageDisabled = errors.New("receipt storage is not configured on this deployment")
+
+type AttachmentService struct {
+	scope       *Scope
+	attachments *repo.AttachmentRepository
+	expenses    *repo.ExpenseRepository
+	store       storage.Store
+	log         *slog.Logger
+
+	uploadTTL   time.Duration
+	downloadTTL time.Duration
+}
+
+func NewAttachmentService(
+	scope *Scope,
+	attachments *repo.AttachmentRepository,
+	expenses *repo.ExpenseRepository,
+	store storage.Store,
+	uploadTTL, downloadTTL time.Duration,
+	log *slog.Logger,
+) *AttachmentService {
+	return &AttachmentService{
+		scope: scope, attachments: attachments, expenses: expenses, store: store,
+		uploadTTL: uploadTTL, downloadTTL: downloadTTL, log: log,
+	}
+}
+
+// UploadTicket is what the client needs to upload a receipt itself.
+type UploadTicket struct {
+	ObjectKey string                    `json:"object_key"`
+	Upload    *storage.PresignedRequest `json:"upload"`
+}
+
+// UploadRequest is the client's declaration of what it is about to upload.
+type UploadRequest struct {
+	Filename       string
+	ContentType    string
+	SizeBytes      int64
+	ChecksumSHA256 string // base64, as the object store expects it
+}
+
+// PrepareUpload validates the declaration and signs a URL for it.
+//
+// The bytes never come through this service. The signature binds the upload to
+// the declared content type and checksum, so the object store - the only party
+// that sees the content - is the one that verifies it, and a client that
+// uploads something other than what it declared is refused there.
+//
+// What this cannot bind is the size: a presigned PUT has no way to carry a
+// length limit, only the browser POST policy form does. The declared size is
+// checked here and the stored size is checked again in ConfirmUpload, which is
+// the honest version of the guarantee - a client can waste bucket space once,
+// and cannot get a row for it.
+func (s *AttachmentService) PrepareUpload(
+	ctx context.Context,
+	subject auth.Subject,
+	expenseID uuid.UUID,
+	req UploadRequest,
+) (*UploadTicket, error) {
+	if s.store == nil {
+		return nil, ErrStorageDisabled
+	}
+
+	filename, checksum, err := validateUpload(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var ticket *UploadTicket
+
+	err = s.scope.Read(ctx, subject, func(ctx context.Context, tc *postgres.TenantConn, actor tenant.Actor) error {
+		claim, err := s.expenses.Get(ctx, tc, expenseID)
+		if err != nil {
+			return err
+		}
+		if err := s.mayAttach(actor, claim); err != nil {
+			return err
+		}
+
+		count, err := s.attachments.Count(ctx, tc, expenseID)
+		if err != nil {
+			return err
+		}
+		if count >= repo.MaxAttachmentsPerClaim {
+			return fmt.Errorf("%w: a claim may carry at most %d receipts",
+				shared.ErrConflict, repo.MaxAttachmentsPerClaim)
+		}
+
+		key := storage.ObjectKey(tc.TenantID(), expenseID, filename)
+		signed, err := s.store.PresignPut(ctx, key, s.uploadTTL, storage.PutConstraints{
+			ContentType:    req.ContentType,
+			ChecksumSHA256: checksum,
+		})
+		if err != nil {
+			return fmt.Errorf("sign upload: %w", err)
+		}
+
+		ticket = &UploadTicket{ObjectKey: key, Upload: signed}
+		return nil
+	})
+
+	return ticket, err
+}
+
+// ConfirmUpload records the attachment once the client says it has uploaded.
+//
+// It does not take the client's word for it. The object is stat-ed first, so a
+// caller cannot register a receipt it never uploaded, point a row at somebody
+// else's object, or claim a size the store disagrees with. Without that check
+// the attachment list would be a set of assertions rather than a set of files.
+func (s *AttachmentService) ConfirmUpload(
+	ctx context.Context,
+	subject auth.Subject,
+	expenseID uuid.UUID,
+	objectKey string,
+	req UploadRequest,
+) (*repo.Attachment, error) {
+	if s.store == nil {
+		return nil, ErrStorageDisabled
+	}
+
+	filename, checksum, err := validateUpload(req)
+	if err != nil {
+		return nil, err
+	}
+
+	rawChecksum, err := base64.StdEncoding.DecodeString(checksum)
+	if err != nil || len(rawChecksum) != 32 {
+		return nil, shared.FieldError{Field: "checksum_sha256", Detail: "must be a base64-encoded SHA-256 digest"}
+	}
+
+	// The key is not taken on trust either. It was generated by PrepareUpload
+	// from the tenant and the claim, so a key naming another tenant's prefix is
+	// a caller trying to attach somebody else's file - and object stores have
+	// no row-level security to stop them reading it afterwards.
+	expectedPrefix := fmt.Sprintf("tenants/%s/expenses/%s/", subject.TenantID, expenseID)
+	if !strings.HasPrefix(objectKey, expectedPrefix) {
+		return nil, shared.FieldError{Field: "object_key", Detail: "does not belong to this claim"}
+	}
+
+	info, err := s.store.Stat(ctx, objectKey)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, shared.FieldError{Field: "object_key", Detail: "no upload was found at this key"}
+		}
+		return nil, err
+	}
+	if info.SizeBytes != req.SizeBytes {
+		return nil, shared.FieldError{
+			Field:  "size_bytes",
+			Detail: fmt.Sprintf("the stored object is %d bytes, not %d", info.SizeBytes, req.SizeBytes),
+		}
+	}
+	if info.SizeBytes > storage.MaxObjectBytes {
+		// A presigned PUT cannot enforce a length, so this is where an
+		// oversized upload is caught. The object is left for the bucket
+		// lifecycle rule to reap; deleting it here would let a caller use this
+		// endpoint to delete arbitrary keys by declaring the wrong size.
+		return nil, shared.FieldError{Field: "size_bytes", Detail: "the stored object exceeds the 25 MiB limit"}
+	}
+	// Empty when the store does not report one. The digest was already
+	// enforced at upload time by the signed header, so this is a confirmation
+	// rather than the mechanism - but when it is present it must agree.
+	if info.ChecksumSHA256 != "" && info.ChecksumSHA256 != checksum {
+		return nil, shared.FieldError{Field: "checksum_sha256", Detail: "does not match the stored object"}
+	}
+
+	var created *repo.Attachment
+
+	err = s.scope.Write(ctx, subject, func(ctx context.Context, tc *postgres.TenantConn, actor tenant.Actor) error {
+		claim, err := s.expenses.GetForUpdate(ctx, tc, expenseID)
+		if err != nil {
+			return err
+		}
+		// Re-checked inside the transaction. The claim may have been submitted
+		// between the presign and the confirm, and a receipt appearing after an
+		// approver has looked at the claim is exactly what the draft-only rule
+		// exists to prevent.
+		if err := s.mayAttach(actor, claim); err != nil {
+			return err
+		}
+
+		created, err = s.attachments.Add(ctx, tc, expenseID, objectKey,
+			filename, req.ContentType, info.SizeBytes, rawChecksum, actor.MembershipID)
+		return err
+	})
+
+	return created, err
+}
+
+// List returns the receipts on a claim, to anyone entitled to see the claim.
+func (s *AttachmentService) List(ctx context.Context, subject auth.Subject, expenseID uuid.UUID) ([]*repo.Attachment, error) {
+	var out []*repo.Attachment
+
+	err := s.scope.Read(ctx, subject, func(ctx context.Context, tc *postgres.TenantConn, actor tenant.Actor) error {
+		claim, err := s.expenses.Get(ctx, tc, expenseID)
+		if err != nil {
+			return err
+		}
+		if err := s.mayRead(actor, claim); err != nil {
+			return err
+		}
+		out, err = s.attachments.List(ctx, tc, expenseID)
+		return err
+	})
+
+	return out, err
+}
+
+// DownloadURL returns a short-lived link to the object.
+//
+// The link is the entire authorisation - the object store knows nothing about
+// tenants or roles - so it is minted per request, after the permission check,
+// and expires in minutes. Anyone the link is forwarded to can read the receipt
+// until it does, which is why the TTL is capped in configuration.
+func (s *AttachmentService) DownloadURL(ctx context.Context, subject auth.Subject, id uuid.UUID) (string, error) {
+	if s.store == nil {
+		return "", ErrStorageDisabled
+	}
+
+	var key, filename string
+
+	err := s.scope.Read(ctx, subject, func(ctx context.Context, tc *postgres.TenantConn, actor tenant.Actor) error {
+		found, err := s.attachments.Get(ctx, tc, id)
+		if err != nil {
+			return err
+		}
+		if err := s.mayReadAttachment(actor, found); err != nil {
+			return err
+		}
+		key, filename = found.ObjectKey, found.Filename
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return s.store.PresignGet(ctx, key, s.downloadTTL, filename)
+}
+
+// Delete removes a receipt from a draft.
+//
+// The row goes first and the object second, outside the transaction. An object
+// store deletion cannot be rolled back, so deleting inside the transaction
+// would destroy the file even when the transaction is abandoned - and a row
+// pointing at a missing object is a worse failure than an object with no row,
+// which is just bucket litter for the lifecycle rule to reap.
+func (s *AttachmentService) Delete(ctx context.Context, subject auth.Subject, id uuid.UUID) error {
+	var objectKey string
+
+	err := s.scope.Write(ctx, subject, func(ctx context.Context, tc *postgres.TenantConn, actor tenant.Actor) error {
+		found, err := s.attachments.Get(ctx, tc, id)
+		if err != nil {
+			return err
+		}
+		if !actor.SameMembership(found.ExpenseSubmitterID) {
+			return fmt.Errorf("%w: only the person who filed a claim may remove its receipts", shared.ErrForbidden)
+		}
+		if !found.ExpenseStatus.Editable() {
+			return fmt.Errorf("%w: a receipt on a submitted claim is evidence and cannot be removed",
+				shared.ErrConflict)
+		}
+
+		objectKey = found.ObjectKey
+		return s.attachments.Delete(ctx, tc, id)
+	})
+	if err != nil {
+		return err
+	}
+
+	if s.store != nil {
+		if err := s.store.Delete(ctx, objectKey); err != nil {
+			// The row is already gone and the request succeeded. Logging is
+			// the right response: failing now would tell the user to retry a
+			// deletion that has happened.
+			s.log.WarnContext(ctx, "attachment row deleted but the object remains",
+				slog.String("object_key", objectKey),
+				slog.String("error", err.Error()))
+		}
+	}
+	return nil
+}
+
+// mayAttach decides who can add a receipt: the person who filed the claim,
+// while it is still a draft.
+func (s *AttachmentService) mayAttach(actor tenant.Actor, claim *expense.Expense) error {
+	if !actor.SameMembership(claim.SubmitterID) {
+		return fmt.Errorf("%w: only the person who filed a claim may attach receipts to it", shared.ErrForbidden)
+	}
+	if !claim.Status.Editable() {
+		return fmt.Errorf("%w: a claim that has been submitted cannot gain new receipts", shared.ErrConflict)
+	}
+	return nil
+}
+
+// mayRead mirrors the expense service's visibility rules. A receipt is as
+// sensitive as the claim it belongs to, so the two answers must agree.
+func (s *AttachmentService) mayRead(actor tenant.Actor, claim *expense.Expense) error {
+	if actor.SameMembership(claim.SubmitterID) && actor.Can(tenant.PermExpenseReadOwn) {
+		return nil
+	}
+	if actor.Can(tenant.PermExpenseReadAll) {
+		return nil
+	}
+	if actor.Can(tenant.PermExpenseReadTeam) && actor.GovernsDepartment(claim.DepartmentID) {
+		return nil
+	}
+	return shared.ErrNotFound
+}
+
+func (s *AttachmentService) mayReadAttachment(actor tenant.Actor, a *repo.AttachmentWithClaim) error {
+	return s.mayRead(actor, &expense.Expense{
+		SubmitterID:  a.ExpenseSubmitterID,
+		DepartmentID: a.ExpenseDepartmentID,
+	})
+}
+
+// validateUpload checks the client's declaration before anything is signed.
+func validateUpload(req UploadRequest) (filename, checksum string, err error) {
+	var v shared.Validator
+
+	// Only the base name is kept. A browser sends the local path on some
+	// platforms, and "C:\Users\ada\receipt.pdf" is not a filename - nor is
+	// "../../etc/passwd", which is the version that matters.
+	filename = filepath.Base(strings.TrimSpace(strings.ReplaceAll(req.Filename, `\`, "/")))
+	switch {
+	case filename == "" || filename == "." || filename == "/":
+		v.Add("filename", "is required")
+	case len([]rune(filename)) > 255:
+		v.Add("filename", "must be at most 255 characters")
+	}
+
+	if !storage.ContentTypeAllowed(req.ContentType) {
+		// An allowlist. The store serves these back to a browser, so anything
+		// that can carry script - image/svg+xml is the one people forget - is a
+		// stored cross-site scripting vector against whoever opens the receipt.
+		v.Add("content_type", "must be a PDF or an image (pdf, jpeg, png, webp, heic, tiff)")
+	}
+
+	switch {
+	case req.SizeBytes <= 0:
+		v.Add("size_bytes", "must be greater than zero")
+	case req.SizeBytes > storage.MaxObjectBytes:
+		v.Add("size_bytes", "must be at most 25 MiB")
+	}
+
+	checksum = strings.TrimSpace(req.ChecksumSHA256)
+	raw, decodeErr := base64.StdEncoding.DecodeString(checksum)
+	if decodeErr != nil || len(raw) != 32 {
+		v.Add("checksum_sha256", "must be the base64-encoded SHA-256 of the file")
+	}
+
+	return filename, checksum, v.Err()
+}
+
+// HexChecksum renders a stored digest for a client, so it can be compared
+// against what sha256sum prints.
+func HexChecksum(b []byte) string { return hex.EncodeToString(b) }

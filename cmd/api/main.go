@@ -24,6 +24,7 @@ import (
 	"github.com/mlkad/b2b-expense-tracker/internal/platform/postgres"
 	repo "github.com/mlkad/b2b-expense-tracker/internal/repository/postgres"
 	"github.com/mlkad/b2b-expense-tracker/internal/service"
+	"github.com/mlkad/b2b-expense-tracker/internal/storage"
 	transport "github.com/mlkad/b2b-expense-tracker/internal/transport/http"
 	"github.com/mlkad/b2b-expense-tracker/internal/transport/http/handler"
 	"github.com/mlkad/b2b-expense-tracker/internal/transport/http/middleware"
@@ -163,6 +164,31 @@ func run() error {
 		log.Warn("billing gateway is not configured; every tenant will resolve to the free plan")
 	}
 
+	// Receipts are optional: a deployment with no object store runs perfectly
+	// well and answers 501 on the attachment endpoints. Announced at startup,
+	// because a silently receipt-less deployment is discovered by a customer
+	// rather than by an operator.
+	var objectStore storage.Store
+	if cfg.Storage.Enabled {
+		s3, err := storage.NewS3Store(storage.S3Config{
+			Endpoint:  cfg.Storage.Endpoint,
+			Region:    cfg.Storage.Region,
+			Bucket:    cfg.Storage.Bucket,
+			AccessKey: cfg.Storage.AccessKey,
+			SecretKey: cfg.Storage.SecretKey,
+			PathStyle: cfg.Storage.PathStyle,
+		})
+		if err != nil {
+			return fmt.Errorf("object storage: %w", err)
+		}
+		objectStore = s3
+		log.Info("receipt storage configured",
+			slog.String("endpoint", cfg.Storage.Endpoint),
+			slog.String("bucket", cfg.Storage.Bucket))
+	} else {
+		log.Warn("no object storage configured; receipt uploads will be refused")
+	}
+
 	queue := worker.NewClient(asynq.RedisClientOpt{
 		Addr:     cfg.Redis.Addr,
 		Password: cfg.Redis.Password,
@@ -176,6 +202,7 @@ func run() error {
 		billingRepo = repo.NewBillingRepository()
 		budgetRepo  = repo.NewBudgetRepository()
 		orgRepo     = repo.NewOrgRepository()
+		fileRepo    = repo.NewAttachmentRepository()
 	)
 
 	scope := service.NewScope(db, tenancyRepo)
@@ -186,6 +213,8 @@ func run() error {
 		billingService = service.NewBillingService(scope, billingRepo, tenancyRepo, gatewayClient, log)
 		reportService  = service.NewReportService(scope, expenseRepo, billingRepo, tenancyRepo)
 		orgService     = service.NewOrgService(scope, orgRepo, budgetRepo, tenancyRepo, billingRepo)
+		fileService    = service.NewAttachmentService(scope, fileRepo, expenseRepo, objectStore,
+			cfg.Storage.UploadTTL, cfg.Storage.DownloadTTL, log)
 	)
 
 	authLimiter := middleware.NewRateLimiter(0.5, 10) // ~30/min per address, burst 10
@@ -201,6 +230,7 @@ func run() error {
 		Exports:  handler.NewExportHandler(reportService, cfg.HTTP.ExportTimeout),
 		Billing:  handler.NewBillingHandler(billingService, relay, log),
 		Org:      handler.NewOrgHandler(orgService),
+		Files:    handler.NewAttachmentHandler(fileService),
 		Health:   handler.NewHealthHandler(db, cfg.Version),
 	}
 
