@@ -143,6 +143,17 @@ tidy: ## Tidy and verify the module
 .PHONY: check
 check: fmt vet test ## Format, vet and unit test - what CI runs first
 
+.PHONY: openapi-validate
+openapi-validate: ## Validate api/openapi.json with an independent validator
+	# TestOpenAPIMatchesTheRouter already checks the document against the real
+	# chi tree, which is the property that matters. This checks it against the
+	# 3.1 schema itself, which that test cannot.
+	@python3 -c "from openapi_spec_validator import validate; \
+		from openapi_spec_validator.readers import read_from_filename; \
+		spec, _ = read_from_filename('api/openapi.json'); validate(spec); \
+		print('api/openapi.json is a valid OpenAPI 3.1 document')" \
+	  || echo "install the validator first: pip3 install openapi-spec-validator"
+
 # -----------------------------------------------------------------------------
 # Containers
 # -----------------------------------------------------------------------------

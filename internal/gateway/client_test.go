@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -190,8 +191,12 @@ func TestResponseBodyIsBounded(t *testing.T) {
 	client, _ := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"id":"`))
-		for i := 0; i < 2<<20; i++ { // ~2 MiB, past the 1 MiB cap
-			w.Write([]byte("A"))
+		// Written in chunks rather than a byte at a time: two million single
+		// writes take long enough under the race detector to turn this into a
+		// timeout test by accident, which would pass for the wrong reason.
+		chunk := bytes.Repeat([]byte("A"), 64<<10)
+		for written := 0; written < 2<<20; written += len(chunk) {
+			w.Write(chunk)
 		}
 		w.Write([]byte(`"}`))
 	}))
@@ -204,19 +209,29 @@ func TestResponseBodyIsBounded(t *testing.T) {
 }
 
 func TestContextCancellationStopsTheRetryLoop(t *testing.T) {
+	var attempts int32
 	client, _ := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&attempts, 1)
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	start := time.Now()
-	if _, err := client.GetSubscription(ctx, uuid.New(), "cus_1"); err == nil {
+	_, err := client.GetSubscription(ctx, uuid.New(), "cus_1")
+	if err == nil {
 		t.Fatal("a cancelled request succeeded")
 	}
-	// An abandoned request must not keep retrying and holding resources.
-	if elapsed := time.Since(start); elapsed > time.Second {
-		t.Fatalf("a cancelled request kept retrying for %s", elapsed)
+	// Asserted on the error rather than on elapsed wall-clock time. A
+	// stopwatch here would be a test that fails on a loaded CI runner for
+	// reasons that have nothing to do with the retry loop, and the thing
+	// actually worth checking is that the loop reports the cancellation rather
+	// than swallowing it and continuing.
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("got %v, want it to report the cancellation", err)
+	}
+	if atomic.LoadInt32(&attempts) > 1 {
+		t.Fatalf("made %d attempts after the context was cancelled, want at most 1",
+			atomic.LoadInt32(&attempts))
 	}
 }
