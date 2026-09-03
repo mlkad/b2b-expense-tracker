@@ -82,3 +82,44 @@ SELECT coalesce(d.name, 'Unassigned')          AS department_name,
    AND (sqlc.narg('spent_to')::date IS NULL OR e.spent_at <= sqlc.narg('spent_to'))
  GROUP BY d.name, e.department_id, e.currency
  ORDER BY total_minor DESC;
+
+-- ---------------------------------------------------------------------------
+-- Plan limit counters
+--
+-- One query per countable resource rather than a single query returning all
+-- three. Each is called on the path that creates that resource, so a combined
+-- query would make adding a department count the vendor subscriptions too -
+-- three index scans where one is needed, on every write.
+--
+-- Each counts exactly what its limit means: live departments, not archived
+-- ones; active memberships, not revoked invitations; subscriptions that are
+-- still being tracked, not cancelled ones. Counting the wrong set is how a
+-- customer hits a ceiling they cannot see any way to get under.
+-- ---------------------------------------------------------------------------
+
+-- name: CountLiveDepartments :one
+SELECT count(*) FROM departments
+WHERE tenant_id = @tenant_id AND archived_at IS NULL;
+
+-- name: CountActiveMembers :one
+SELECT count(*) FROM memberships
+WHERE tenant_id = @tenant_id AND status <> 'suspended';
+
+-- name: UpdateBudget :one
+UPDATE budgets
+SET amount_minor        = @amount_minor,
+    currency            = @currency,
+    alert_threshold_bps = @alert_threshold_bps
+WHERE tenant_id = @tenant_id AND id = @id
+RETURNING *;
+
+-- name: DeleteBudget :execrows
+DELETE FROM budgets WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: UpdateDepartment :one
+UPDATE departments
+SET name         = @name,
+    parent_id    = @parent_id,
+    head_user_id = @head_user_id
+WHERE tenant_id = @tenant_id AND id = @id AND archived_at IS NULL
+RETURNING *;

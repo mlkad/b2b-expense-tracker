@@ -139,7 +139,7 @@ func TestTenantsAreIsolated(t *testing.T) {
 	t.Run("a tenant sees only its own claims", func(t *testing.T) {
 		for _, tc := range []struct {
 			name  string
-			org   org
+			org   orgFixture
 			want  int64
 			count int
 		}{
@@ -301,7 +301,7 @@ func TestBindingDoesNotSurviveTheTransaction(t *testing.T) {
 func TestConcurrentTenantsDoNotBleed(t *testing.T) {
 	const tenants = 6
 
-	orgs := make([]org, tenants)
+	orgs := make([]orgFixture, tenants)
 	for i := range orgs {
 		orgs[i] = seedOrg(t, fmt.Sprintf("concurrent-%d", i))
 		// A distinct amount per tenant, so a row from the wrong tenant is
@@ -317,7 +317,7 @@ func TestConcurrentTenantsDoNotBleed(t *testing.T) {
 	for round := 0; round < 10; round++ {
 		for i := range orgs {
 			wg.Add(1)
-			go func(o org, want int64) {
+			go func(o orgFixture, want int64) {
 				defer wg.Done()
 
 				err := app.WithTenantTx(context.Background(),

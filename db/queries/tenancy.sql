@@ -46,9 +46,6 @@ SET name = @name, default_currency = @default_currency
 WHERE id = @id
 RETURNING *;
 
--- name: SetTenantStatus :execrows
-UPDATE tenants SET status = @status WHERE id = @id;
-
 -- name: SetTenantBillingRef :execrows
 UPDATE tenants SET billing_customer_ref = @billing_customer_ref WHERE id = @id;
 

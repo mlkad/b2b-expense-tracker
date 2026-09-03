@@ -217,6 +217,13 @@ func (r *TenancyRepository) CreateTenantWithOwner(
 }
 
 // InviteMember adds a membership to the caller's tenant.
+//
+// invitedBy is a user id, not a membership id - the only identifier in the
+// tenant-scoped tables that is. Everywhere else authority is a property of
+// someone's place in the organisation, so submitter_id, decided_by and
+// actor_id are all memberships. This one is a person: the record of who
+// extended an invitation should outlive that person's own membership, and a
+// membership reference would be set to NULL the day they left.
 func (r *TenancyRepository) InviteMember(
 	ctx context.Context,
 	tc *postgres.TenantConn,
@@ -224,7 +231,7 @@ func (r *TenancyRepository) InviteMember(
 	role tenant.Role,
 	departmentID *uuid.UUID,
 	approvalLimit *int64,
-	invitedBy uuid.UUID,
+	invitedByUserID uuid.UUID,
 ) (tenant.Membership, error) {
 	row, err := gen.New(tc).CreateMembership(ctx, gen.CreateMembershipParams{
 		TenantID:           tc.TenantID(),
@@ -233,7 +240,7 @@ func (r *TenancyRepository) InviteMember(
 		Status:             gen.MembershipStatusInvited,
 		DepartmentID:       departmentID,
 		ApprovalLimitMinor: approvalLimit,
-		InvitedBy:          &invitedBy,
+		InvitedBy:          &invitedByUserID,
 	})
 	if err != nil {
 		return tenant.Membership{}, translate(err)
@@ -275,6 +282,16 @@ func (r *TenancyRepository) ListMembers(ctx context.Context, tc *postgres.Tenant
 		}
 	}
 	return out, nil
+}
+
+// GetMember loads one membership, for the checks that compare the caller's
+// standing against the target's before administering them.
+func (r *TenancyRepository) GetMember(ctx context.Context, tc *postgres.TenantConn, id uuid.UUID) (tenant.Membership, error) {
+	row, err := gen.New(tc).GetMembership(ctx, gen.GetMembershipParams{TenantID: tc.TenantID(), ID: id})
+	if err != nil {
+		return tenant.Membership{}, translate(err)
+	}
+	return toDomainMembership(row), nil
 }
 
 // UpdateMember changes a member's standing.

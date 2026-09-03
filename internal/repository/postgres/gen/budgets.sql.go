@@ -116,6 +116,44 @@ func (q *Queries) BudgetConsumption(ctx context.Context, arg BudgetConsumptionPa
 	return items, nil
 }
 
+const countActiveMembers = `-- name: CountActiveMembers :one
+SELECT count(*) FROM memberships
+WHERE tenant_id = $1 AND status <> 'suspended'
+`
+
+func (q *Queries) CountActiveMembers(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveMembers, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countLiveDepartments = `-- name: CountLiveDepartments :one
+
+SELECT count(*) FROM departments
+WHERE tenant_id = $1 AND archived_at IS NULL
+`
+
+// ---------------------------------------------------------------------------
+// Plan limit counters
+//
+// One query per countable resource rather than a single query returning all
+// three. Each is called on the path that creates that resource, so a combined
+// query would make adding a department count the vendor subscriptions too -
+// three index scans where one is needed, on every write.
+//
+// Each counts exactly what its limit means: live departments, not archived
+// ones; active memberships, not revoked invitations; subscriptions that are
+// still being tracked, not cancelled ones. Counting the wrong set is how a
+// customer hits a ceiling they cannot see any way to get under.
+// ---------------------------------------------------------------------------
+func (q *Queries) CountLiveDepartments(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveDepartments, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createBudget = `-- name: CreateBudget :one
 
 INSERT INTO budgets (tenant_id, department_id, period_start, period_end, amount_minor, currency, alert_threshold_bps)
@@ -192,6 +230,23 @@ func (q *Queries) CreateDepartment(ctx context.Context, arg CreateDepartmentPara
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteBudget = `-- name: DeleteBudget :execrows
+DELETE FROM budgets WHERE tenant_id = $1 AND id = $2
+`
+
+type DeleteBudgetParams struct {
+	TenantID uuid.UUID
+	ID       uuid.UUID
+}
+
+func (q *Queries) DeleteBudget(ctx context.Context, arg DeleteBudgetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteBudget, arg.TenantID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const getDepartment = `-- name: GetDepartment :one
@@ -361,4 +416,84 @@ func (q *Queries) SpendByDepartment(ctx context.Context, arg SpendByDepartmentPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateBudget = `-- name: UpdateBudget :one
+UPDATE budgets
+SET amount_minor        = $1,
+    currency            = $2,
+    alert_threshold_bps = $3
+WHERE tenant_id = $4 AND id = $5
+RETURNING id, tenant_id, department_id, period_start, period_end, amount_minor, currency, alert_threshold_bps, created_at, updated_at
+`
+
+type UpdateBudgetParams struct {
+	AmountMinor       int64
+	Currency          string
+	AlertThresholdBps int32
+	TenantID          uuid.UUID
+	ID                uuid.UUID
+}
+
+func (q *Queries) UpdateBudget(ctx context.Context, arg UpdateBudgetParams) (Budget, error) {
+	row := q.db.QueryRow(ctx, updateBudget,
+		arg.AmountMinor,
+		arg.Currency,
+		arg.AlertThresholdBps,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i Budget
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.DepartmentID,
+		&i.PeriodStart,
+		&i.PeriodEnd,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.AlertThresholdBps,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateDepartment = `-- name: UpdateDepartment :one
+UPDATE departments
+SET name         = $1,
+    parent_id    = $2,
+    head_user_id = $3
+WHERE tenant_id = $4 AND id = $5 AND archived_at IS NULL
+RETURNING id, tenant_id, name, parent_id, head_user_id, archived_at, created_at, updated_at
+`
+
+type UpdateDepartmentParams struct {
+	Name       string
+	ParentID   *uuid.UUID
+	HeadUserID *uuid.UUID
+	TenantID   uuid.UUID
+	ID         uuid.UUID
+}
+
+func (q *Queries) UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error) {
+	row := q.db.QueryRow(ctx, updateDepartment,
+		arg.Name,
+		arg.ParentID,
+		arg.HeadUserID,
+		arg.TenantID,
+		arg.ID,
+	)
+	var i Department
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Name,
+		&i.ParentID,
+		&i.HeadUserID,
+		&i.ArchivedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

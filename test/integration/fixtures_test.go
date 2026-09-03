@@ -14,8 +14,10 @@ import (
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/tenant"
 )
 
-// org is a seeded organisation with one member of each role that matters.
-type org struct {
+// orgFixture is a seeded organisation with one member of each role that
+// matters. It is not called "org" because the domain package of that name is
+// imported by some of these tests.
+type orgFixture struct {
 	TenantID   uuid.UUID
 	Slug       string
 	Department uuid.UUID
@@ -31,7 +33,7 @@ type org struct {
 // data through the policies would require the very isolation the tests are
 // about to check, so a failure in the policies would show up as a failure to
 // build the fixture rather than as a failed assertion.
-func seedOrg(t *testing.T, slug string) org {
+func seedOrg(t *testing.T, slug string) orgFixture {
 	t.Helper()
 
 	db, err := sql.Open("pgx", ownerDSN)
@@ -41,7 +43,7 @@ func seedOrg(t *testing.T, slug string) org {
 	defer db.Close()
 
 	ctx := context.Background()
-	o := org{Slug: slug}
+	o := orgFixture{Slug: slug}
 
 	if err := db.QueryRowContext(ctx,
 		`INSERT INTO tenants (slug, name) VALUES ($1, $2) RETURNING id`,
@@ -65,7 +67,7 @@ func seedOrg(t *testing.T, slug string) org {
 	return o
 }
 
-func seedMember(t *testing.T, db *sql.DB, o org, label string, role tenant.Role, dept *uuid.UUID) uuid.UUID {
+func seedMember(t *testing.T, db *sql.DB, o orgFixture, label string, role tenant.Role, dept *uuid.UUID) uuid.UUID {
 	t.Helper()
 	ctx := context.Background()
 
@@ -91,7 +93,7 @@ func seedMember(t *testing.T, db *sql.DB, o org, label string, role tenant.Role,
 
 // seedClaim inserts an expense directly, for tests that need a starting state
 // the state machine would take several steps to reach.
-func seedClaim(t *testing.T, o org, status string, minor int64) uuid.UUID {
+func seedClaim(t *testing.T, o orgFixture, status string, minor int64) uuid.UUID {
 	t.Helper()
 
 	db, err := sql.Open("pgx", ownerDSN)

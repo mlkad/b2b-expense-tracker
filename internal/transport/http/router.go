@@ -53,6 +53,7 @@ type Handlers struct {
 	Expenses *handler.ExpenseHandler
 	Exports  *handler.ExportHandler
 	Billing  *handler.BillingHandler
+	Org      *handler.OrgHandler
 	Health   *handler.HealthHandler
 }
 
@@ -151,6 +152,16 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 
 			r.Get("/billing/entitlement", h.Billing.Entitlement)
 
+			// Departments are readable by any active member, because a member
+			// filing a claim has to pick one - putting the list behind the
+			// management permission would make the create form unusable.
+			r.Get("/departments", h.Org.ListDepartments)
+			r.Get("/budgets", h.Org.ListBudgets)
+			r.Get("/budgets/consumption", h.Org.BudgetConsumption)
+			r.Get("/summary", h.Org.Summary)
+			r.Get("/vendor-subscriptions", h.Org.ListVendorSubscriptions)
+			r.Get("/members", h.Org.ListMembers)
+
 			// Writes carry a second, tenant-keyed limit. Keyed on the tenant
 			// rather than the IP so an office behind one NAT is not throttled
 			// as a single client.
@@ -177,6 +188,24 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 
 				r.Post("/billing/checkout", h.Billing.StartCheckout)
 				r.Post("/billing/portal", h.Billing.OpenPortal)
+
+				r.Post("/departments", h.Org.CreateDepartment)
+				r.Patch("/departments/{id}", h.Org.UpdateDepartment)
+				// DELETE archives rather than deletes: the foreign keys are
+				// ON DELETE RESTRICT, so a department with any history could
+				// not be removed anyway, and archiving keeps historical claims
+				// attributable.
+				r.Delete("/departments/{id}", h.Org.ArchiveDepartment)
+
+				r.Post("/budgets", h.Org.CreateBudget)
+				r.Patch("/budgets/{id}", h.Org.UpdateBudget)
+				r.Delete("/budgets/{id}", h.Org.DeleteBudget)
+
+				r.Post("/vendor-subscriptions", h.Org.CreateVendorSubscription)
+				r.Patch("/vendor-subscriptions/{id}", h.Org.UpdateVendorSubscription)
+
+				r.Post("/members", h.Org.InviteMember)
+				r.Patch("/members/{id}", h.Org.UpdateMember)
 			})
 		})
 

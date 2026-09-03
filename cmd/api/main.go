@@ -118,6 +118,8 @@ func run() error {
 		tenancyRepo = repo.NewTenancyRepository()
 		expenseRepo = repo.NewExpenseRepository()
 		billingRepo = repo.NewBillingRepository()
+		budgetRepo  = repo.NewBudgetRepository()
+		orgRepo     = repo.NewOrgRepository()
 	)
 
 	scope := service.NewScope(db, tenancyRepo)
@@ -127,6 +129,7 @@ func run() error {
 		expenseService = service.NewExpenseService(scope, expenseRepo, queue)
 		billingService = service.NewBillingService(scope, billingRepo, tenancyRepo, gatewayClient, log)
 		reportService  = service.NewReportService(scope, expenseRepo, billingRepo, tenancyRepo)
+		orgService     = service.NewOrgService(scope, orgRepo, budgetRepo, tenancyRepo, billingRepo)
 	)
 
 	authLimiter := middleware.NewRateLimiter(0.5, 10) // ~30/min per address, burst 10
@@ -141,6 +144,7 @@ func run() error {
 		Expenses: handler.NewExpenseHandler(expenseService),
 		Exports:  handler.NewExportHandler(reportService, cfg.HTTP.ExportTimeout),
 		Billing:  handler.NewBillingHandler(billingService, relay, log),
+		Org:      handler.NewOrgHandler(orgService),
 		Health:   handler.NewHealthHandler(db, cfg.Version),
 	}
 

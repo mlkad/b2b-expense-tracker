@@ -209,3 +209,10 @@ RETURNING *;
 SELECT * FROM expense_attachments
 WHERE tenant_id = @tenant_id AND expense_id = @expense_id
 ORDER BY created_at ASC;
+
+-- SpendByStatus and SpendByDepartment back the dashboard's summary strip.
+--
+-- Both are aggregates over the same rows the list endpoint pages through, so
+-- they are answered from expenses_budget_rollup_idx rather than by counting
+-- what the client already has - a dashboard that summed its first page would
+-- report the wrong total on every tenant with more than one page.

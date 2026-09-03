@@ -61,6 +61,8 @@ type Querier interface {
 	// The batch limit bounds how long a single sweep transaction holds locks;
 	// the caller loops until it gets a short page.
 	ClaimDueVendorSubscriptions(ctx context.Context, arg ClaimDueVendorSubscriptionsParams) ([]VendorSubscription, error)
+	CountActiveMembers(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CountActiveVendorSubscriptions(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	// The export scan is deliberately NOT here.
 	//
 	// sqlc emits a :many query as a function that returns a slice, which means it
@@ -75,6 +77,20 @@ type Querier interface {
 	// runs it against a live schema so a column renamed in a migration still
 	// breaks the build's test stage rather than production.
 	CountExpensesByStatus(ctx context.Context, arg CountExpensesByStatusParams) ([]CountExpensesByStatusRow, error)
+	// ---------------------------------------------------------------------------
+	// Plan limit counters
+	//
+	// One query per countable resource rather than a single query returning all
+	// three. Each is called on the path that creates that resource, so a combined
+	// query would make adding a department count the vendor subscriptions too -
+	// three index scans where one is needed, on every write.
+	//
+	// Each counts exactly what its limit means: live departments, not archived
+	// ones; active memberships, not revoked invitations; subscriptions that are
+	// still being tracked, not cancelled ones. Counting the wrong set is how a
+	// customer hits a ceiling they cannot see any way to get under.
+	// ---------------------------------------------------------------------------
+	CountLiveDepartments(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	// ---------------------------------------------------------------------------
 	CreateBudget(ctx context.Context, arg CreateBudgetParams) (Budget, error)
 	CreateDepartment(ctx context.Context, arg CreateDepartmentParams) (Department, error)
@@ -112,6 +128,7 @@ type Querier interface {
 	// what this product tracks. Not to be confused with tenant_subscriptions
 	// below, which is our subscription and decides what they are entitled to.
 	CreateVendorSubscription(ctx context.Context, arg CreateVendorSubscriptionParams) (VendorSubscription, error)
+	DeleteBudget(ctx context.Context, arg DeleteBudgetParams) (int64, error)
 	// The RLS policy expenses_delete_drafts_only refuses this for any other
 	// status, so the predicate here is documentation of an existing guarantee
 	// rather than the guarantee itself.
@@ -152,6 +169,7 @@ type Querier interface {
 	GetTenantEntitlement(ctx context.Context, tenantID uuid.UUID) (GetTenantEntitlementRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
+	GetVendorSubscription(ctx context.Context, arg GetVendorSubscriptionParams) (VendorSubscription, error)
 	ListBudgets(ctx context.Context, arg ListBudgetsParams) ([]Budget, error)
 	ListDepartments(ctx context.Context, arg ListDepartmentsParams) ([]Department, error)
 	ListExpenseAttachments(ctx context.Context, arg ListExpenseAttachmentsParams) ([]ExpenseAttachment, error)
@@ -211,7 +229,6 @@ type Querier interface {
 	// revoked and both are asked to log in again.
 	RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) (int64, error)
 	SetTenantBillingRef(ctx context.Context, arg SetTenantBillingRefParams) (int64, error)
-	SetTenantStatus(ctx context.Context, arg SetTenantStatusParams) (int64, error)
 	SettleBillingEvent(ctx context.Context, arg SettleBillingEventParams) (int64, error)
 	// SpendByDepartment is the dashboard's headline chart and the department sheet
 	// of the export.
@@ -223,6 +240,8 @@ type Querier interface {
 	// the predicate matches nothing, no row is returned, and the repository
 	// reports ErrStaleWrite rather than overwriting a decision nobody saw.
 	TransitionExpense(ctx context.Context, arg TransitionExpenseParams) (Expense, error)
+	UpdateBudget(ctx context.Context, arg UpdateBudgetParams) (Budget, error)
+	UpdateDepartment(ctx context.Context, arg UpdateDepartmentParams) (Department, error)
 	UpdateExpenseDraft(ctx context.Context, arg UpdateExpenseDraftParams) (Expense, error)
 	UpdateMembership(ctx context.Context, arg UpdateMembershipParams) (Membership, error)
 	UpdateTenant(ctx context.Context, arg UpdateTenantParams) (Tenant, error)
