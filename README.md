@@ -408,10 +408,17 @@ SHA-256, the API signs a URL, and the store verifies the digest itself — a
 mismatch is refused with `XAmzContentChecksumMismatch`, which is a stronger
 guarantee than an API that never sees the file could make.
 
-The smoke script has now found three things the unit tests could not: a session
+Exports are a **signed link**, not a plain one. A browser navigation cannot set
+an Authorization header, so a plain `<a href>` to the export route arrives with
+no credential and is refused — which is exactly what an earlier version did. The
+click now asks for a URL signed for that exact query; the token lives a minute
+and is bound to the filters, because the export reads them from the URL and
+anything unsigned would be a parameter the holder could widen.
+
+The smoke script has now found four things the unit tests could not: a session
 that did not survive a reload, `networkidle` being meaningless after a SPA
-navigation, and the API mixing `snake_case` with `PascalCase` in one object
-because handlers were returning repository structs directly. All three are fixed.
+navigation, the API mixing `snake_case` with `PascalCase` in one object, and
+export buttons that returned 401 every time. All four are fixed.
 
 More in [web/README.md](web/README.md).
 

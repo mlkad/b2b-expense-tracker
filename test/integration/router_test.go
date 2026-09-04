@@ -32,8 +32,10 @@ import (
 func newAPI(t *testing.T) (http.Handler, *auth.TokenService) {
 	t.Helper()
 
+	const testJWTSecret = "an-integration-test-signing-secret-32b"
+
 	tokens, err := auth.NewTokenService(auth.Config{
-		Secret:   "an-integration-test-signing-secret-32b",
+		Secret:   testJWTSecret,
 		Issuer:   "expense-api",
 		Audience: "expense-clients",
 		TTL:      15 * time.Minute,
@@ -54,12 +56,18 @@ func newAPI(t *testing.T) (http.Handler, *auth.TokenService) {
 	)
 	scope := service.NewScope(app, tenancyRepo)
 
+	downloadTokens, err := auth.NewDownloadTokens(testJWTSecret, "integration")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	handlers := transport.Handlers{
 		Auth: handler.NewAuthHandler(
 			service.NewAuthService(scope, tenancyRepo, tokens, 30*24*time.Hour, log), 0, false),
 		Expenses: handler.NewExpenseHandler(service.NewExpenseService(scope, expenseRepo, nil)),
 		Exports: handler.NewExportHandler(
-			service.NewReportService(scope, expenseRepo, billingRepo, tenancyRepo), 2*time.Minute),
+			service.NewReportService(scope, expenseRepo, billingRepo, tenancyRepo),
+			downloadTokens, 2*time.Minute),
 		Billing: handler.NewBillingHandler(
 			service.NewBillingService(scope, billingRepo, tenancyRepo, nil, log), nil, log),
 		Org: handler.NewOrgHandler(
@@ -72,10 +80,11 @@ func newAPI(t *testing.T) (http.Handler, *auth.TokenService) {
 	}
 
 	router := transport.NewRouter(handlers, transport.RouterConfig{
-		APITimeout:    30 * time.Second,
-		ExportTimeout: 2 * time.Minute,
-		CORS:          middleware.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}},
-		Tokens:        tokens,
+		APITimeout:     30 * time.Second,
+		ExportTimeout:  2 * time.Minute,
+		CORS:           middleware.CORSConfig{AllowedOrigins: []string{"https://app.example.com"}},
+		Tokens:         tokens,
+		DownloadTokens: downloadTokens,
 	}, log)
 
 	return router, tokens
