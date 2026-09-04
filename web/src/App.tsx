@@ -2,9 +2,11 @@ import { BrowserRouter, Route, Routes } from "react-router";
 
 import { Layout } from "./components/Layout";
 import { Approvals } from "./routes/Approvals";
+import { Budgets } from "./routes/Budgets";
 import { ExpenseDetail } from "./routes/ExpenseDetail";
 import { ExpenseForm } from "./routes/ExpenseForm";
 import { Expenses } from "./routes/Expenses";
+import { Organisation } from "./routes/Organisation";
 import { Overview } from "./routes/Overview";
 import { SignIn } from "./routes/SignIn";
 import { useSession } from "./auth/context";
@@ -44,6 +46,8 @@ function Router() {
         <Route path="expenses/:id" element={<ExpenseDetail />} />
         <Route path="expenses/:id/edit" element={<ExpenseForm />} />
         <Route path="approvals" element={<Approvals />} />
+        <Route path="budgets" element={<Budgets />} />
+        <Route path="organisation" element={<Organisation />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

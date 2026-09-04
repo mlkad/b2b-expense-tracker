@@ -5,6 +5,7 @@ import { ApiError } from "../api/client";
 import type { Expense, ExpenseAction, ExpenseEventRecord } from "../api/types";
 import { Button, Card, ErrorNotice, Field, SkeletonRows, TextInput } from "../components/ui";
 import { Modal } from "../components/Modal";
+import { Receipts } from "../components/Receipts";
 import { StatusBadge } from "../components/StatusBadge";
 import { useResource } from "../hooks/useResource";
 import { useSession } from "../auth/context";
@@ -208,6 +209,16 @@ export function ExpenseDetail() {
           )}
         </Card>
 
+        <div className="flex flex-col gap-6">
+        <Receipts
+          expenseId={claim.id}
+          // The server refuses both anyway - attaching to a submitted claim,
+          // and removing a receipt from one - so this only avoids offering a
+          // control that would be refused.
+          canAttach={mine && claim.status === "draft"}
+          canDelete={mine && claim.status === "draft"}
+        />
+
         <Card className="p-5">
           <h2 className="mb-4 text-sm font-medium text-ink-800">History</h2>
           {history.length === 0 ? (
@@ -215,22 +226,23 @@ export function ExpenseDetail() {
           ) : (
             <ol className="flex flex-col gap-3">
               {history.map((event) => (
-                <li key={event.ID} className="border-l-2 border-ink-100 pl-3">
-                  <p className="text-sm font-medium">{sentenceCase(event.Action)}</p>
+                <li key={event.id} className="border-l-2 border-ink-100 pl-3">
+                  <p className="text-sm font-medium">{sentenceCase(event.action)}</p>
                   <p className="text-xs text-ink-600">
-                    {formatTimestamp(event.OccurredAt)}
-                    {event.ActorEmail ? ` · ${event.ActorEmail}` : " · system"}
+                    {formatTimestamp(event.occurred_at)}
+                    {event.actor_email ? ` · ${event.actor_email}` : " · system"}
                   </p>
                   {/* The amount as it was at the time, not today's. An audit
                       row saying "approved" without saying what was approved is
                       useless once the claim has been revised. */}
-                  <p className="text-xs text-ink-600 tabular-nums">{formatMoney(event.Amount)}</p>
-                  {event.Reason && <p className="mt-1 text-xs">{event.Reason}</p>}
+                  <p className="text-xs text-ink-600 tabular-nums">{formatMoney(event.amount)}</p>
+                  {event.reason && <p className="mt-1 text-xs">{event.reason}</p>}
                 </li>
               ))}
             </ol>
           )}
         </Card>
+        </div>
       </div>
 
       <Modal
