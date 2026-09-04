@@ -12,7 +12,6 @@ package storage
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/http"
@@ -145,9 +144,6 @@ func ContentTypeAllowed(ct string) bool {
 	_, ok := AllowedContentTypes[strings.ToLower(strings.TrimSpace(ct))]
 	return ok
 }
-
-// ChecksumOf is a helper for tests and for the filesystem store.
-func ChecksumOf(b []byte) [32]byte { return sha256.Sum256(b) }
 
 // httpClient is shared by the backends. The timeouts are short because every
 // request these make is a HEAD or a DELETE against a store in the same region;

@@ -63,13 +63,6 @@ type Money struct {
 	Currency Currency `json:"currency"`
 }
 
-func NewMoney(minor int64, currency Currency) (Money, error) {
-	if !currency.Valid() {
-		return Money{}, FieldError{Field: "currency", Detail: "must be a three-letter ISO 4217 code"}
-	}
-	return Money{Minor: minor, Currency: currency}, nil
-}
-
 func (m Money) IsZero() bool     { return m.Minor == 0 }
 func (m Money) IsPositive() bool { return m.Minor > 0 }
 

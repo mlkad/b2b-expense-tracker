@@ -2,9 +2,7 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -277,14 +275,4 @@ func (r *BillingRepository) TenantsWithBilling(ctx context.Context, db *postgres
 // Microseconds is PostgreSQL's own resolution for the type, so nothing is lost.
 func interval(d time.Duration) pgtype.Interval {
 	return pgtype.Interval{Microseconds: d.Microseconds(), Valid: true}
-}
-
-// EncodePayload prepares an event body for the ledger. The raw bytes are
-// stored rather than a re-encoding, so what is kept is what was signed.
-func EncodePayload(v any) ([]byte, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, fmt.Errorf("encode billing payload: %w", err)
-	}
-	return b, nil
 }

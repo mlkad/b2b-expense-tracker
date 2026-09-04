@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -13,8 +15,10 @@ import (
 
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/billing"
 	"github.com/mlkad/b2b-expense-tracker/internal/gateway"
+	"github.com/mlkad/b2b-expense-tracker/internal/notify"
 	"github.com/mlkad/b2b-expense-tracker/internal/platform/postgres"
 	repo "github.com/mlkad/b2b-expense-tracker/internal/repository/postgres"
+	"github.com/mlkad/b2b-expense-tracker/internal/worker"
 )
 
 func linkBilling(t *testing.T, tenantID uuid.UUID, ref string) {
@@ -241,8 +245,23 @@ func TestRelaySignatureRoundTrip(t *testing.T) {
 	})
 }
 
+// The sweep sends nothing; a notifier is only required to construct the
+// handlers.
+type silentNotifier struct{}
+
+func (silentNotifier) ExpenseTransition(context.Context, notify.ExpenseEvent) error { return nil }
+func (silentNotifier) BudgetThreshold(context.Context, notify.BudgetEvent) error    { return nil }
+
 // The recurring sweep must materialise one claim per charge and no more,
-// however many times it runs.
+// however many times it runs - and a repeat run must still advance the
+// subscription's charge date.
+//
+// This drives the worker handler. An earlier version of this test inserted the
+// rows itself with raw SQL, so it proved the partial unique index worked and
+// nothing about the code that was supposed to rely on it. The handler was in
+// fact broken twice over the whole time this test was green: it ran in a
+// transaction bound to no tenant, so every insert failed a foreign key check,
+// and the duplicate path aborted the transaction so the date never moved.
 func TestRecurringSweepIsIdempotent(t *testing.T) {
 	o := seedOrg(t, "recurring-sweep")
 	ctx := context.Background()
@@ -263,33 +282,51 @@ func TestRecurringSweepIsIdempotent(t *testing.T) {
 		t.Fatalf("seed vendor subscription: %v", err)
 	}
 
-	budgets := repo.NewBudgetRepository()
+	// A nil queue keeps the sweep on its direct path rather than fanning out
+	// into jobs no worker is running here.
+	handlers := worker.NewHandlers(
+		app, repo.NewExpenseRepository(), repo.NewBudgetRepository(),
+		repo.NewTenancyRepository(), repo.NewOrgRepository(), nil, nil,
+		silentNotifier{}, slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
 
-	// Insert the same charge twice, as two sweeps would if the advance were
-	// ever lost. The partial unique index has to refuse the second.
-	for attempt := 0; attempt < 2; attempt++ {
-		err := app.WithSystemTx(ctx, postgres.Binding{TenantID: o.TenantID}, "test: recurring sweep",
+	chargeDate := func() time.Time {
+		t.Helper()
+		var next time.Time
+		if err := app.WithSystemTx(ctx, postgres.Binding{TenantID: o.TenantID}, "test: read charge date",
 			func(ctx context.Context, conn *postgres.TenantConn) error {
-				var subID uuid.UUID
-				if err := conn.QueryRow(ctx,
-					`SELECT id FROM vendor_subscriptions WHERE tenant_id = $1`, o.TenantID).Scan(&subID); err != nil {
-					return err
-				}
-				_, err := conn.Exec(ctx, `
-					INSERT INTO expenses
-					  (tenant_id, submitter_id, department_id, status, category, amount_minor,
-					   currency, merchant, spent_at, source_subscription_id)
-					VALUES ($1, $2, $3, 'draft', 'software', 4500, 'USD', 'Figma', $4, $5)`,
-					o.TenantID, o.Submitter, o.Department, due, subID)
-				return err
-			})
+				return conn.QueryRow(ctx,
+					`SELECT next_charge_on FROM vendor_subscriptions WHERE tenant_id = $1`,
+					o.TenantID).Scan(&next)
+			}); err != nil {
+			t.Fatalf("read charge date: %v", err)
+		}
+		return next
+	}
 
-		if attempt == 0 && err != nil {
-			t.Fatalf("first materialisation: %v", err)
-		}
-		if attempt == 1 && err == nil {
-			t.Fatal("a second claim was created for the same charge date")
-		}
+	if err := handlers.HandleRecurringSweep(ctx, nil); err != nil {
+		t.Fatalf("first sweep: %v", err)
+	}
+	afterFirst := chargeDate()
+	if !afterFirst.After(due) {
+		t.Fatalf("the first sweep left the charge date at %s", afterFirst.Format(time.DateOnly))
+	}
+
+	// Put the subscription back on today's charge, as a sweep would see it if
+	// the advance had been lost to a crash between the insert and the update.
+	// The second run must recognise its own earlier work and move on, not fail.
+	if err := app.WithSystemTx(ctx, postgres.Binding{TenantID: o.TenantID}, "test: rewind charge date",
+		func(ctx context.Context, conn *postgres.TenantConn) error {
+			_, err := conn.Exec(ctx,
+				`UPDATE vendor_subscriptions SET next_charge_on = $2, last_generated_on = NULL
+				 WHERE tenant_id = $1`, o.TenantID, due)
+			return err
+		}); err != nil {
+		t.Fatalf("rewind: %v", err)
+	}
+
+	if err := handlers.HandleRecurringSweep(ctx, nil); err != nil {
+		t.Fatalf("the repeat sweep failed instead of skipping the duplicate: %v", err)
 	}
 
 	if n := countAsOwner(t,
@@ -298,5 +335,11 @@ func TestRecurringSweepIsIdempotent(t *testing.T) {
 		t.Fatalf("the sweep produced %d claims for one charge, want 1", n)
 	}
 
-	_ = budgets
+	// The point of the second assertion: the duplicate must not leave the
+	// subscription stuck on a date it has already charged, or it is retried
+	// every day for ever.
+	if after := chargeDate(); !after.After(due) {
+		t.Fatalf("the repeat sweep left the charge date at %s, so the subscription is stuck",
+			after.Format(time.DateOnly))
+	}
 }

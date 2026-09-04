@@ -363,33 +363,67 @@ func (h *Handlers) HandleRecurringSweep(ctx context.Context, _ *asynq.Task) erro
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 
 	for {
-		var claimed int
-
-		err := h.db.WithSystemTx(ctx, postgres.Binding{}, "materialise recurring vendor charges",
-			func(ctx context.Context, tc *postgres.TenantConn) error {
-				due, err := h.budgets.ClaimDue(ctx, tc, today, RecurringBatchSize)
-				if err != nil {
-					return err
-				}
-				claimed = len(due)
-
-				for _, sub := range due {
-					if err := h.materialise(ctx, tc, sub, today); err != nil {
-						return err
-					}
-				}
-				return nil
-			})
+		// Two transactions per batch, not one, and that split is the fix for a
+		// bug this had from the start.
+		//
+		// Finding what is due crosses tenants, so it needs a system
+		// transaction with no tenant bound. Writing a claim does not: the
+		// repository takes the tenant from the binding, which is what makes a
+		// row in the wrong tenant unrepresentable rather than merely unlikely.
+		// Doing both in one unbound transaction meant every claim was written
+		// with the nil tenant and refused by the foreign key - so the sweep
+		// had never once produced a draft.
+		due, err := h.claimDue(ctx, today)
 		if err != nil {
 			return err
 		}
 
+		for _, sub := range due {
+			if err := h.materialiseOne(ctx, sub); err != nil {
+				// One tenant's failure must not abandon the rest of the batch.
+				// The row is left un-advanced, so tomorrow's sweep - or a
+				// retry - picks it up again, and the unique index stops that
+				// from producing a second claim.
+				h.log.ErrorContext(ctx, "could not materialise a recurring charge",
+					slog.String("subscription_id", sub.ID.String()),
+					slog.String("tenant_id", sub.TenantID.String()),
+					slog.String("error", err.Error()))
+			}
+		}
+
 		// A short page means the queue is drained. Looping until then keeps
 		// each transaction small while still finishing the day's work.
-		if claimed < RecurringBatchSize {
+		if len(due) < RecurringBatchSize {
 			return nil
 		}
 	}
+}
+
+// claimDue finds the charges that are due, across every tenant.
+func (h *Handlers) claimDue(ctx context.Context, today time.Time) ([]repo.DueSubscription, error) {
+	var due []repo.DueSubscription
+
+	err := h.db.WithSystemTx(ctx, postgres.Binding{}, "find recurring vendor charges that are due",
+		func(ctx context.Context, tc *postgres.TenantConn) error {
+			var err error
+			due, err = h.budgets.ClaimDue(ctx, tc, today, RecurringBatchSize)
+			return err
+		})
+	return due, err
+}
+
+// materialiseOne writes the claim for one charge, in its own tenant's context.
+//
+// The row lock taken while finding the batch is gone by now, so two sweeps
+// running at once could both reach this for the same subscription. That is
+// safe: expenses_recurring_once_per_charge_key refuses the second insert, and
+// the loser treats the refusal as success because the work is done.
+func (h *Handlers) materialiseOne(ctx context.Context, sub repo.DueSubscription) error {
+	return h.db.WithSystemTx(ctx, postgres.Binding{TenantID: sub.TenantID},
+		"materialise a recurring vendor charge",
+		func(ctx context.Context, tc *postgres.TenantConn) error {
+			return h.materialise(ctx, tc, sub)
+		})
 }
 
 // materialise creates the draft claim for one recurring charge.
@@ -398,7 +432,7 @@ func (h *Handlers) HandleRecurringSweep(ctx context.Context, _ *asynq.Task) erro
 // but the row is still written with the subscription's own tenant id, so the
 // ordinary tenant clause holds too and the row is indistinguishable from one a
 // person filed.
-func (h *Handlers) materialise(ctx context.Context, tc *postgres.TenantConn, sub repo.DueSubscription, today time.Time) error {
+func (h *Handlers) materialise(ctx context.Context, tc *postgres.TenantConn, sub repo.DueSubscription) error {
 	if sub.OwnerID == nil {
 		// Without an owning membership there is nobody to attribute the claim
 		// to, and expenses.submitter_id is NOT NULL. Advancing the date anyway
@@ -422,15 +456,20 @@ func (h *Handlers) materialise(ctx context.Context, tc *postgres.TenantConn, sub
 	claim.SourceSubscriptionID = &sub.ID
 	event.ActorID = nil // the system acted, not a person
 
-	if err := h.expenses.Create(ctx, tc, claim, event); err != nil {
-		if errors.Is(err, shared.ErrConflict) || errors.Is(err, shared.ErrValidation) {
-			// The unique index refused a duplicate for this charge date. The
-			// work is already done; advance and move on.
-			h.log.InfoContext(ctx, "recurring claim already exists for this charge",
-				slog.String("subscription_id", sub.ID.String()))
-		} else {
+	// CreateRecurring, not Create: a duplicate here has to leave the
+	// transaction usable, because the advance below is what stops the same
+	// subscription being retried tomorrow and every day after.
+	//
+	// The earlier version caught any validation error and called it "already
+	// done", which swallowed the foreign key violation that was the real bug -
+	// and then failed anyway on the aborted transaction. A catch-all on an
+	// error class is how a fault becomes a log line nobody reads.
+	if err := h.expenses.CreateRecurring(ctx, tc, claim, event); err != nil {
+		if !errors.Is(err, repo.ErrAlreadyMaterialised) {
 			return err
 		}
+		h.log.InfoContext(ctx, "recurring claim already exists for this charge",
+			slog.String("subscription_id", sub.ID.String()))
 	}
 
 	return h.budgets.Advance(ctx, tc, sub.ID, repo.NextChargeDate(sub.NextChargeOn, sub.Cadence))

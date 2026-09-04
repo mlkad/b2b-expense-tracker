@@ -107,6 +107,19 @@ type Querier interface {
 	// binding itself, so it cannot disagree with what RLS is enforcing.
 	CreateExpense(ctx context.Context, arg CreateExpenseParams) (Expense, error)
 	CreateMembership(ctx context.Context, arg CreateMembershipParams) (Membership, error)
+	// CreateRecurringExpense is the sweep's insert, and it differs from
+	// CreateExpense in one way that matters: a duplicate is not an error.
+	//
+	// The sweep re-reads a subscription whose claim already exists whenever a
+	// previous run was interrupted after the insert and before the date advanced.
+	// Letting the unique index raise there aborts the transaction, so the advance
+	// that would stop it happening again cannot run - and the subscription is
+	// retried every day, failing every day. ON CONFLICT DO NOTHING returns no row
+	// instead, which the caller reads as "already done" and carries on.
+	//
+	// The conflict target repeats the partial index's predicate, because a partial
+	// unique index is only inferred when the WHERE clause matches.
+	CreateRecurringExpense(ctx context.Context, arg CreateRecurringExpenseParams) (Expense, error)
 	// ---------------------------------------------------------------------------
 	// Refresh tokens
 	// ---------------------------------------------------------------------------

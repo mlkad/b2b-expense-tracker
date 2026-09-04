@@ -100,14 +100,6 @@ func (a Action) Valid() bool {
 	return false
 }
 
-func ParseAction(s string) (Action, error) {
-	action := Action(s)
-	if !action.Valid() {
-		return "", shared.FieldError{Field: "action", Detail: fmt.Sprintf("%q is not a known action", s)}
-	}
-	return action, nil
-}
-
 // EventAction mirrors the expense_action enum, which is a superset of Action:
 // it also records the two things that happen to a claim without being
 // transitions - its creation, and edits to a draft.

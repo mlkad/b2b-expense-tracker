@@ -291,6 +291,100 @@ func (q *Queries) CreateExpense(ctx context.Context, arg CreateExpenseParams) (E
 	return i, err
 }
 
+const createRecurringExpense = `-- name: CreateRecurringExpense :one
+INSERT INTO expenses (
+    id, tenant_id, submitter_id, department_id, status, category,
+    amount_minor, currency, merchant, description, spent_at,
+    revision, version, source_subscription_id, created_at, updated_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6,
+    $7, $8, $9, $10, $11,
+    $12, $13, $14, $15, $16
+)
+ON CONFLICT (tenant_id, source_subscription_id, spent_at)
+    WHERE source_subscription_id IS NOT NULL
+    DO NOTHING
+RETURNING id, tenant_id, submitter_id, department_id, status, category, amount_minor, currency, merchant, description, spent_at, submitted_at, decided_at, decided_by, decision_note, paid_at, payment_ref, revision, version, source_subscription_id, created_at, updated_at
+`
+
+type CreateRecurringExpenseParams struct {
+	ID                   uuid.UUID
+	TenantID             uuid.UUID
+	SubmitterID          uuid.UUID
+	DepartmentID         *uuid.UUID
+	Status               ExpenseStatus
+	Category             ExpenseCategory
+	AmountMinor          int64
+	Currency             string
+	Merchant             string
+	Description          *string
+	SpentAt              time.Time
+	Revision             int32
+	Version              int32
+	SourceSubscriptionID *uuid.UUID
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+// CreateRecurringExpense is the sweep's insert, and it differs from
+// CreateExpense in one way that matters: a duplicate is not an error.
+//
+// The sweep re-reads a subscription whose claim already exists whenever a
+// previous run was interrupted after the insert and before the date advanced.
+// Letting the unique index raise there aborts the transaction, so the advance
+// that would stop it happening again cannot run - and the subscription is
+// retried every day, failing every day. ON CONFLICT DO NOTHING returns no row
+// instead, which the caller reads as "already done" and carries on.
+//
+// The conflict target repeats the partial index's predicate, because a partial
+// unique index is only inferred when the WHERE clause matches.
+func (q *Queries) CreateRecurringExpense(ctx context.Context, arg CreateRecurringExpenseParams) (Expense, error) {
+	row := q.db.QueryRow(ctx, createRecurringExpense,
+		arg.ID,
+		arg.TenantID,
+		arg.SubmitterID,
+		arg.DepartmentID,
+		arg.Status,
+		arg.Category,
+		arg.AmountMinor,
+		arg.Currency,
+		arg.Merchant,
+		arg.Description,
+		arg.SpentAt,
+		arg.Revision,
+		arg.Version,
+		arg.SourceSubscriptionID,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i Expense
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.SubmitterID,
+		&i.DepartmentID,
+		&i.Status,
+		&i.Category,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Merchant,
+		&i.Description,
+		&i.SpentAt,
+		&i.SubmittedAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.DecisionNote,
+		&i.PaidAt,
+		&i.PaymentRef,
+		&i.Revision,
+		&i.Version,
+		&i.SourceSubscriptionID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteExpenseAttachment = `-- name: DeleteExpenseAttachment :execrows
 DELETE FROM expense_attachments
 WHERE tenant_id = $1 AND id = $2
