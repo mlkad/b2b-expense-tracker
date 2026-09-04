@@ -52,6 +52,13 @@ migrate-down: ## Roll back one migration
 migrate-status: ## Show which migrations are applied
 	GOOSE_DBSTRING="$(DEV_DSN)" $(GOBIN)/goose status
 
+.PHONY: seed
+seed: ## Fill the local database with a demo organisation
+	# The owner connection, not the runtime role: seeding writes across every
+	# tenant table before there is a tenant to bind a session to, which is
+	# exactly what row-level security exists to prevent.
+	SEED_DATABASE_URL="$(DEV_DSN)" go run ./cmd/seed
+
 .PHONY: migrate-new
 migrate-new: ## Create a migration: make migrate-new name=add_widgets
 	@test -n "$(name)" || (echo "usage: make migrate-new name=add_widgets" && exit 1)

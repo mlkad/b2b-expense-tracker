@@ -84,7 +84,15 @@ type GatewayConfig struct {
 // difference only ever surfaces as "it worked locally" - so development runs
 // the same MinIO that production's S3 is API-compatible with.
 type StorageConfig struct {
-	Endpoint  string
+	Endpoint string
+
+	// PublicEndpoint is where a browser reaches the store, when that differs
+	// from where this service does. In a container the API talks to
+	// http://minio:9000 and the browser cannot resolve that name at all - and
+	// the host is part of the signature, so a presigned URL cannot be rewritten
+	// after the fact. Empty means the two are the same.
+	PublicEndpoint string
+
 	Region    string
 	Bucket    string
 	AccessKey string
@@ -201,14 +209,15 @@ func Load() (*Config, error) {
 		},
 
 		Storage: StorageConfig{
-			Endpoint:    os.Getenv("STORAGE_ENDPOINT"),
-			Region:      env("STORAGE_REGION", "us-east-1"),
-			Bucket:      env("STORAGE_BUCKET", "receipts"),
-			AccessKey:   os.Getenv("STORAGE_ACCESS_KEY"),
-			SecretKey:   os.Getenv("STORAGE_SECRET_KEY"),
-			PathStyle:   boolean("STORAGE_PATH_STYLE", true),
-			UploadTTL:   duration("STORAGE_UPLOAD_TTL", 15*time.Minute, &problems),
-			DownloadTTL: duration("STORAGE_DOWNLOAD_TTL", 10*time.Minute, &problems),
+			Endpoint:       os.Getenv("STORAGE_ENDPOINT"),
+			PublicEndpoint: os.Getenv("STORAGE_PUBLIC_ENDPOINT"),
+			Region:         env("STORAGE_REGION", "us-east-1"),
+			Bucket:         env("STORAGE_BUCKET", "receipts"),
+			AccessKey:      os.Getenv("STORAGE_ACCESS_KEY"),
+			SecretKey:      os.Getenv("STORAGE_SECRET_KEY"),
+			PathStyle:      boolean("STORAGE_PATH_STYLE", true),
+			UploadTTL:      duration("STORAGE_UPLOAD_TTL", 15*time.Minute, &problems),
+			DownloadTTL:    duration("STORAGE_DOWNLOAD_TTL", 10*time.Minute, &problems),
 		},
 
 		Mail: MailConfig{

@@ -9,6 +9,15 @@ npm run check    # typecheck, lint, unit tests
 npm run smoke    # drives the running app with a real browser
 ```
 
+From the repository root, `make seed` fills the database with an organisation
+that has claims in every state — an empty dashboard shows nothing about whether
+any of this works.
+
+The smoke script creates its own claim rather than picking one from the table.
+Seeded claims belong to other people, and previous runs leave claims already
+submitted, so acting on whatever is in the list makes the assertions depend on
+the state of the database rather than on the product.
+
 ## The session
 
 The access token lives **in memory** — a field on an object held by the

@@ -390,11 +390,33 @@ string back into a number. Permissions and each claim's `allowed_actions` come
 from the server, so the dashboard never holds a second copy of the state machine
 or the permission matrix.
 
+### Seeing it
+
 ```bash
-make web-install
-make web          # dev server, proxying /api to the Go API
-make web-check    # typecheck, lint, 30 unit tests
-make web-smoke    # drives the running app with a real browser
+cp .env.example .env
+make up            # postgres, redis, minio, mailpit
+make migrate-up
+make seed          # a demo organisation with claims in every state
+
+make run           # API on :8080
+make web           # dashboard on :5173   (a second shell)
+```
+
+Then sign in at <http://localhost:5173> as any of the seeded people — they show
+different halves of the product:
+
+| | | |
+|---|---|---|
+| `ada@acme.test` | owner | everything, including billing |
+| `grace@acme.test` | manager | the approver queue, scoped to Engineering |
+| `katherine@acme.test` | finance | settles approved claims, cannot approve |
+| `margaret@acme.test` | member | files claims, sees only her own |
+
+Password for all of them: `correct-horse-battery`.
+
+```bash
+make web-check     # typecheck, lint, unit tests
+make web-smoke     # drives the running app with a real browser
 ```
 
 Pagination is next/previous with no page numbers: the server cannot answer

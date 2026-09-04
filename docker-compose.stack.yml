@@ -51,6 +51,10 @@ services:
       REDIS_ADDR: redis:6379
       JWT_SECRET: local-development-secret-at-least-32-bytes
       STORAGE_ENDPOINT: http://minio:9000
+      # Where a browser reaches the store. The API talks to the container name;
+      # a browser cannot resolve it, and the host is part of the signature - so
+      # a presigned URL has to be signed for the address the client will use.
+      STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:9010
       STORAGE_BUCKET: receipts
       STORAGE_ACCESS_KEY: local_storage_key
       STORAGE_SECRET_KEY: local_storage_secret
