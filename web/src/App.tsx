@@ -1,6 +1,10 @@
 import { BrowserRouter, Route, Routes } from "react-router";
 
 import { Layout } from "./components/Layout";
+import { Approvals } from "./routes/Approvals";
+import { ExpenseDetail } from "./routes/ExpenseDetail";
+import { ExpenseForm } from "./routes/ExpenseForm";
+import { Expenses } from "./routes/Expenses";
 import { Overview } from "./routes/Overview";
 import { SignIn } from "./routes/SignIn";
 import { useSession } from "./auth/context";
@@ -34,6 +38,12 @@ function Router() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
+        <Route path="expenses" element={<Expenses />} />
+        {/* "new" before ":id", or the literal would be read as an id. */}
+        <Route path="expenses/new" element={<ExpenseForm />} />
+        <Route path="expenses/:id" element={<ExpenseDetail />} />
+        <Route path="expenses/:id/edit" element={<ExpenseForm />} />
+        <Route path="approvals" element={<Approvals />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

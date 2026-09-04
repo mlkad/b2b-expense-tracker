@@ -397,6 +397,16 @@ make web-check    # typecheck, lint, 30 unit tests
 make web-smoke    # drives the running app with a real browser
 ```
 
+Pagination is next/previous with no page numbers: the server cannot answer
+"page 7 of 43" without counting the whole filtered set on every request, and
+offering a control the data model cannot support is how a list ends up slow for
+everybody. Going back is a stack of visited cursors — there is no way to compute
+the previous page's cursor from the current one.
+
+Sign-in, the shell, the overview, the expense list with filters and export, the
+claim detail with its audit ledger, the create and edit forms, and the approver
+queue. Budgets, departments, members and receipt uploads are next.
+
 More in [web/README.md](web/README.md).
 
 ---
