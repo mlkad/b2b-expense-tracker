@@ -128,51 +128,16 @@ check(
   `the CSV export downloaded as ${file.suggestedFilename()}`,
 );
 
-// --- One claim --------------------------------------------------------------
-
-// A draft specifically, not simply the first row. Previous runs leave
-// submitted claims in the list, and picking whatever is newest makes the
-// transition assertions depend on how many times this has been run before.
-await page.locator("tbody tr", { hasText: "Draft" }).first().locator("a").click();
-await page.getByRole("heading", { name: "History" }).waitFor({ timeout: 10000 });
-await page.screenshot({ path: `${out}/04-claim.png`, fullPage: true });
-
-const actions = await page.locator("main button").allInnerTexts();
-check(
-  actions.some((a) => a.includes("Submit for approval")),
-  `the actions came from the server's allowed_actions: ${actions.join(", ")}`,
-);
-check(
-  (await page.getByRole("heading", { name: "History" }).count()) === 1,
-  "the audit ledger is shown alongside the claim",
-);
-
-// --- Submitting -------------------------------------------------------------
-
-await page.getByRole("button", { name: "Submit for approval" }).click();
-await page.getByText("Awaiting approval").first().waitFor({ timeout: 10000 });
-check(
-  (await page.getByText("Awaiting approval").count()) > 0,
-  "submitting moved the claim to awaiting approval",
-);
-// The submitter cannot decide on their own claim, so that button must be gone.
-const afterSubmit = await page.locator("main button").allInnerTexts();
-check(
-  !afterSubmit.some((a) => a === "Approve"),
-  `the submitter is not offered Approve on their own claim: ${afterSubmit.join(", ") || "(none)"}`,
-);
-await page.screenshot({ path: `${out}/05-submitted.png`, fullPage: true });
-
 // --- The new-claim form -----------------------------------------------------
 
-await page.getByRole("link", { name: "Expenses", exact: true }).click();
 await page.getByRole("link", { name: "New claim" }).click();
 await page.getByRole("heading", { name: "New claim" }).waitFor();
 await page.screenshot({ path: `${out}/06-new-claim.png`, fullPage: true });
 
 // An amount with more precision than the currency has is refused before a
 // request is made.
-await page.getByLabel("Merchant").fill("Precision Test");
+const merchant = `Smoke ${Date.now()}`;
+await page.getByLabel("Merchant").fill(merchant);
 await page.getByLabel(/^Amount/).fill("12.505");
 await page.getByRole("button", { name: "Create draft" }).click();
 check(
@@ -182,9 +147,9 @@ check(
 
 await page.getByLabel(/^Amount/).fill("12.50");
 await page.getByRole("button", { name: "Create draft" }).click();
-await page.getByRole("heading", { name: /Precision Test/ }).waitFor({ timeout: 10000 });
+await page.getByRole("heading", { name: new RegExp(merchant) }).waitFor({ timeout: 10000 });
 check(
-  (await page.getByRole("heading", { name: /Precision Test/ }).count()) === 1,
+  (await page.getByRole("heading", { name: new RegExp(merchant) }).count()) === 1,
   "a valid claim was created and opened on its own page",
 );
 await page.screenshot({ path: `${out}/07-created.png`, fullPage: true });
@@ -216,6 +181,41 @@ if ((await draftRow.count()) > 0) {
 } else {
   check(false, "no draft claim available to attach a receipt to");
 }
+
+// --- One claim --------------------------------------------------------------
+
+// The claim this run just created, not whatever is in the list. Seeded data
+// belongs to other people and previous runs leave claims already submitted, so
+// picking one from the table makes the transition assertions depend on the
+// state of the database rather than on the product.
+await page.getByRole("heading", { name: "History" }).waitFor({ timeout: 10000 });
+await page.screenshot({ path: `${out}/04-claim.png`, fullPage: true });
+
+const actions = await page.locator("main button").allInnerTexts();
+check(
+  actions.some((a) => a.includes("Submit for approval")),
+  `the actions came from the server's allowed_actions: ${actions.join(", ")}`,
+);
+check(
+  (await page.getByRole("heading", { name: "History" }).count()) === 1,
+  "the audit ledger is shown alongside the claim",
+);
+
+// --- Submitting -------------------------------------------------------------
+
+await page.getByRole("button", { name: "Submit for approval" }).click();
+await page.getByText("Awaiting approval").first().waitFor({ timeout: 10000 });
+check(
+  (await page.getByText("Awaiting approval").count()) > 0,
+  "submitting moved the claim to awaiting approval",
+);
+// The submitter cannot decide on their own claim, so that button must be gone.
+const afterSubmit = await page.locator("main button").allInnerTexts();
+check(
+  !afterSubmit.some((a) => a === "Approve"),
+  `the submitter is not offered Approve on their own claim: ${afterSubmit.join(", ") || "(none)"}`,
+);
+await page.screenshot({ path: `${out}/05-submitted.png`, fullPage: true });
 
 // --- Organisation -----------------------------------------------------------
 

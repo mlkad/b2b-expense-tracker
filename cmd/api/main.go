@@ -176,12 +176,13 @@ func run() error {
 	var objectStore storage.Store
 	if cfg.Storage.Enabled {
 		s3, err := storage.NewS3Store(storage.S3Config{
-			Endpoint:  cfg.Storage.Endpoint,
-			Region:    cfg.Storage.Region,
-			Bucket:    cfg.Storage.Bucket,
-			AccessKey: cfg.Storage.AccessKey,
-			SecretKey: cfg.Storage.SecretKey,
-			PathStyle: cfg.Storage.PathStyle,
+			Endpoint:       cfg.Storage.Endpoint,
+			PublicEndpoint: cfg.Storage.PublicEndpoint,
+			Region:         cfg.Storage.Region,
+			Bucket:         cfg.Storage.Bucket,
+			AccessKey:      cfg.Storage.AccessKey,
+			SecretKey:      cfg.Storage.SecretKey,
+			PathStyle:      cfg.Storage.PathStyle,
 		})
 		if err != nil {
 			return fmt.Errorf("object storage: %w", err)

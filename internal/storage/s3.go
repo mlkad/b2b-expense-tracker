@@ -30,7 +30,18 @@ import (
 // against fixed inputs, and the integration suite performs a real presigned
 // upload and download against MinIO.
 type S3Store struct {
-	endpoint  *url.URL
+	endpoint *url.URL
+
+	// publicEndpoint is the address a browser will use, which is not always
+	// the one this service uses.
+	//
+	// In a container the API reaches the store at http://minio:9000, and
+	// signing a browser's URL with that host produces a link to a hostname the
+	// browser cannot resolve - the upload simply never connects. The host is
+	// part of the SigV4 signature, so it cannot be rewritten afterwards: the
+	// two have to be signed differently from the start.
+	publicEndpoint *url.URL
+
 	region    string
 	bucket    string
 	accessKey string
@@ -46,7 +57,12 @@ type S3Store struct {
 }
 
 type S3Config struct {
-	Endpoint  string
+	Endpoint string
+
+	// PublicEndpoint is where a browser reaches the store. Empty means the
+	// same as Endpoint, which is right whenever the two are on one network.
+	PublicEndpoint string
+
 	Region    string
 	Bucket    string
 	AccessKey string
@@ -73,15 +89,27 @@ func NewS3Store(cfg S3Config) (*S3Store, error) {
 		return nil, fmt.Errorf("endpoint must be http or https, got %q", endpoint.Scheme)
 	}
 
+	publicEndpoint := endpoint
+	if cfg.PublicEndpoint != "" {
+		publicEndpoint, err = url.Parse(cfg.PublicEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("parse public endpoint: %w", err)
+		}
+		if publicEndpoint.Scheme != "http" && publicEndpoint.Scheme != "https" {
+			return nil, fmt.Errorf("public endpoint must be http or https, got %q", publicEndpoint.Scheme)
+		}
+	}
+
 	return &S3Store{
-		endpoint:  endpoint,
-		region:    cfg.Region,
-		bucket:    cfg.Bucket,
-		accessKey: cfg.AccessKey,
-		secretKey: cfg.SecretKey,
-		pathStyle: cfg.PathStyle,
-		client:    httpClient(),
-		now:       time.Now,
+		endpoint:       endpoint,
+		publicEndpoint: publicEndpoint,
+		region:         cfg.Region,
+		bucket:         cfg.Bucket,
+		accessKey:      cfg.AccessKey,
+		secretKey:      cfg.SecretKey,
+		pathStyle:      cfg.PathStyle,
+		client:         httpClient(),
+		now:            time.Now,
 	}, nil
 }
 
@@ -100,7 +128,7 @@ func (s *S3Store) PresignPut(_ context.Context, key string, ttl time.Duration, c
 		headers["x-amz-checksum-sha256"] = c.ChecksumSHA256
 	}
 
-	signed, expiresAt, err := s.presign(http.MethodPut, key, ttl, nil, headers)
+	signed, expiresAt, err := s.presign(s.publicEndpoint, http.MethodPut, key, ttl, nil, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -125,14 +153,14 @@ func (s *S3Store) PresignGet(_ context.Context, key string, ttl time.Duration, d
 		query.Set("response-content-disposition", contentDisposition(downloadName))
 	}
 
-	signed, _, err := s.presign(http.MethodGet, key, ttl, query, nil)
+	signed, _, err := s.presign(s.publicEndpoint, http.MethodGet, key, ttl, query, nil)
 	return signed, err
 }
 
 func (s *S3Store) Stat(ctx context.Context, key string) (ObjectInfo, error) {
 	// A presigned HEAD rather than an Authorization header, so there is one
 	// signing path in this file and no second one to get subtly wrong.
-	signed, _, err := s.presign(http.MethodHead, key, time.Minute, nil, nil)
+	signed, _, err := s.presign(s.endpoint, http.MethodHead, key, time.Minute, nil, nil)
 	if err != nil {
 		return ObjectInfo{}, err
 	}
@@ -176,7 +204,7 @@ func (s *S3Store) Stat(ctx context.Context, key string) (ObjectInfo, error) {
 }
 
 func (s *S3Store) Delete(ctx context.Context, key string) error {
-	signed, _, err := s.presign(http.MethodDelete, key, time.Minute, nil, nil)
+	signed, _, err := s.presign(s.endpoint, http.MethodDelete, key, time.Minute, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -219,6 +247,7 @@ const (
 // separated out because a mistake in any of them produces the same
 // indistinguishable 403 from the store.
 func (s *S3Store) presign(
+	endpoint *url.URL,
 	method, key string,
 	ttl time.Duration,
 	extraQuery url.Values,
@@ -236,7 +265,7 @@ func (s *S3Store) presign(
 	scopeDate := now.Format(dateLayout)
 	scope := strings.Join([]string{scopeDate, s.region, service, terminator}, "/")
 
-	host, canonicalPath := s.address(key)
+	host, canonicalPath := s.address(endpoint, key)
 
 	// Host is always signed. Without it the signature would not bind the URL
 	// to a bucket, and a valid signature for one host would work against
@@ -307,17 +336,17 @@ func (s *S3Store) presign(
 	// "%20" becomes "%2520" - and the store answers SignatureDoesNotMatch with
 	// no indication of which of the dozen inputs was wrong. What is sent has to
 	// be byte-for-byte what was signed.
-	signed := s.endpoint.Scheme + "://" + host + canonicalPath + "?" + canonicalQuery(query)
+	signed := endpoint.Scheme + "://" + host + canonicalPath + "?" + canonicalQuery(query)
 
 	return signed, now.Add(ttl), nil
 }
 
 // address resolves the host and the canonical path for a key.
-func (s *S3Store) address(key string) (host, canonicalPath string) {
+func (s *S3Store) address(endpoint *url.URL, key string) (host, canonicalPath string) {
 	if s.pathStyle {
-		return s.endpoint.Host, "/" + s.bucket + "/" + encodePath(key)
+		return endpoint.Host, "/" + s.bucket + "/" + encodePath(key)
 	}
-	return s.bucket + "." + s.endpoint.Host, "/" + encodePath(key)
+	return s.bucket + "." + endpoint.Host, "/" + encodePath(key)
 }
 
 // signingKey derives the per-day, per-region, per-service key.
