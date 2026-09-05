@@ -55,6 +55,7 @@ type Handlers struct {
 	Billing  *handler.BillingHandler
 	Org      *handler.OrgHandler
 	Files    *handler.AttachmentHandler
+	Account  *handler.AccountHandler
 	Health   *handler.HealthHandler
 }
 
@@ -143,6 +144,8 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 			r.Use(middleware.Timeout(cfg.APITimeout))
 			r.Use(middleware.RequireAuth(cfg.Tokens, log))
 
+			r.Get("/me", h.Account.Me)
+			r.Get("/tenant", h.Account.GetOrganisation)
 			r.Get("/auth/tenants", h.Auth.Tenants)
 			r.Post("/auth/switch-tenant", h.Auth.SwitchTenant)
 
@@ -212,6 +215,11 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 				r.Post("/expenses/{id}/attachments/presign", h.Files.PrepareUpload)
 				r.Post("/expenses/{id}/attachments", h.Files.ConfirmUpload)
 				r.Delete("/attachments/{id}", h.Files.Delete)
+
+				r.Patch("/tenant", h.Account.UpdateOrganisation)
+				// Ends every session, including this one, so it sits with the
+				// credential endpoints in spirit even though it needs a token.
+				r.Post("/auth/password", h.Account.ChangePassword)
 
 				r.Post("/members", h.Org.InviteMember)
 				r.Patch("/members/{id}", h.Org.UpdateMember)

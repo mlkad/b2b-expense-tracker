@@ -271,6 +271,36 @@ suite rather than against my own idea of the algorithm.
 
 ---
 
+## Account and organisation settings
+
+`GET /api/v1/me` is the first call a dashboard makes: who the caller is, where
+they stand, and their permission list — which the client hides controls by, and
+which is a convenience rather than an enforcement point, since every endpoint
+checks for itself.
+
+Two things are deliberately **not** editable:
+
+- **The slug.** It appears in bookmarked links and in the sign-in form, and
+  renaming it breaks both with no redirect to fix them. That needs an alias
+  table and a deprecation window, not a settings field.
+- **The currency, once claims exist.** Existing claims keep the currency they
+  were captured in, so a change would leave totals summing mixed currencies — a
+  number that looks authoritative and means nothing.
+
+Changing a password requires the current one. Without it, a stolen access token
+— fifteen minutes of life — becomes a permanent takeover in one request, and
+that lifetime would be protecting nothing. A wrong current password returns the
+same 401 as a failed login, because this route is reachable *with* a stolen
+token and a distinctive response would let the holder confirm guesses.
+
+Every session is then revoked, including the caller's own:
+
+> keeping other sessions alive means somebody who changed their password because
+> they believed it was compromised has done nothing about the attacker's live
+> session — which is the situation the change was meant to resolve
+
+---
+
 ## Notifications
 
 A submission goes to the people who can decide on it; a decision goes back to

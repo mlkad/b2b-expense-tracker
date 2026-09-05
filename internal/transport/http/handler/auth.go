@@ -172,12 +172,20 @@ func (h *AuthHandler) respondWithSession(w http.ResponseWriter, status int, s *s
 }
 
 func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
+	clearRefreshCookie(w, h.secureCookies)
+}
+
+// clearRefreshCookie is shared with the password change, which also ends the
+// session. One definition, so the two cannot disagree about the path or the
+// attributes - a mismatch would leave a cookie the browser keeps sending to an
+// endpoint that no longer accepts it.
+func clearRefreshCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     refreshCookieName,
 		Value:    "",
 		Path:     "/api/v1/auth",
 		HttpOnly: true,
-		Secure:   h.secureCookies,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})

@@ -37,9 +37,6 @@ RETURNING *;
 -- name: GetTenant :one
 SELECT * FROM tenants WHERE id = @id;
 
--- name: GetTenantBySlug :one
-SELECT * FROM tenants WHERE slug = @slug;
-
 -- name: UpdateTenant :one
 UPDATE tenants
 SET name = @name, default_currency = @default_currency
@@ -198,3 +195,13 @@ SELECT u.email, u.full_name
   FROM memberships m
   JOIN users u ON u.id = m.user_id
  WHERE m.tenant_id = @tenant_id AND m.id = @id AND u.deleted_at IS NULL;
+
+-- RevokeAllRefreshTokensForUser ends every session a user has.
+--
+-- Called when a password changes. The alternative - keeping other sessions
+-- alive - means somebody who changed their password because they believed it
+-- was compromised has done nothing about the attacker's live session, which is
+-- the situation the change was meant to resolve.
+-- name: RevokeAllRefreshTokensForUser :execrows
+UPDATE refresh_tokens SET revoked_at = now()
+WHERE user_id = @user_id AND revoked_at IS NULL;

@@ -216,6 +216,37 @@
         }
       }
     },
+    "/api/v1/auth/password": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Change the caller's password",
+        "description": "Requires the current password. Without it a stolen access token - which lives fifteen minutes - could be turned into a permanent takeover in one request, and that lifetime would be protecting nothing.\\n\\nEvery session is then revoked, including this one, and the refresh cookie is cleared. Keeping other sessions alive means somebody who changed their password because they believed it was compromised has done nothing about the attacker's live session.\\n\\nA wrong current password returns the same 401 as a failed login: this route is reachable with a stolen token, and a distinctive response would let the holder confirm guesses at the real password.",
+        "operationId": "postAuthPassword",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Changed. Every session is revoked and the refresh cookie is cleared."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "422": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        }
+      }
+    },
     "/api/v1/auth/refresh": {
       "post": {
         "tags": [
@@ -1742,6 +1773,40 @@
         }
       }
     },
+    "/api/v1/me": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Who the caller is and what they may do",
+        "description": "The first call a dashboard makes. Permissions are returned so the client can hide controls the caller cannot use - a convenience, never an enforcement point, since the client is free to lie about what it hid and every endpoint checks for itself.",
+        "operationId": "getMe",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        }
+      }
+    },
     "/api/v1/members": {
       "get": {
         "tags": [
@@ -1998,6 +2063,84 @@
           },
           "422": {
             "$ref": "#/components/responses/Invalid"
+          }
+        }
+      }
+    },
+    "/api/v1/tenant": {
+      "get": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "Fetch the caller's organisation",
+        "operationId": "getTenant",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Invalid"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Organisation"
+        ],
+        "summary": "Rename the organisation or change its default currency",
+        "description": "The slug is deliberately not changeable: it appears in bookmarked links and in the sign-in form, and renaming it breaks both with no redirect to fix them.\\n\\nThe currency cannot be changed once claims exist. Existing claims keep the currency they were captured in, so a change would leave totals summing mixed currencies - a number that looks authoritative and means nothing.",
+        "operationId": "patchTenant",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/Invalid"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
