@@ -98,13 +98,29 @@ test-integration: ## Integration tests against a throwaway PostgreSQL container
 .PHONY: test-all
 test-all: test test-integration ## Everything
 
+# COVERPKG is every package that carries logic. cmd is excluded because it is
+# process wiring, and the generated query layer because measuring it would
+# report the coverage of sqlc's code generator rather than of this project.
+COVERPKG := ./internal/domain/...,./internal/export/...,./internal/service/...,\
+./internal/gateway/...,./internal/auth/...,./internal/repository/postgres,\
+./internal/platform/...,./internal/config/...,./internal/transport/...,./internal/worker/...
+
 .PHONY: cover
-cover: ## Coverage report over the packages that carry logic
-	go test -race -count=1 -coverprofile=coverage.out \
-		-coverpkg=./internal/domain/...,./internal/export/...,./internal/service/...,./internal/gateway/... \
-		./...
+cover: ## One coverage number over unit and integration tests together
+	# The integration tag is included on purpose. The persistence and tenancy
+	# layers cannot be meaningfully exercised without a database, so a number
+	# measured without them describes a different program than the one that
+	# ships.
+	go test -tags integration -count=1 -timeout 20m \
+		-coverpkg=$(COVERPKG) -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@go tool cover -func=coverage.out | tail -1
+
+.PHONY: cover-gaps
+cover-gaps: ## List functions with no coverage at all
+	@go test -tags integration -count=1 -timeout 20m \
+		-coverpkg=$(COVERPKG) -coverprofile=coverage.out ./... >/dev/null
+	@go tool cover -func=coverage.out | awk '$$3 == "0.0%"' | sed 's#github.com/mlkad/b2b-expense-tracker/##' 
 
 # -----------------------------------------------------------------------------
 # Quality
