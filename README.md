@@ -367,6 +367,51 @@ documents only its happy path tells a client nothing about what to handle.
 
 `web/` — React 19, Vite, TypeScript, Tailwind 4.
 
+<table>
+<tr>
+<td width="50%">
+
+**Overview** — claims by status, committed spend by department
+<img src="docs/screenshots/overview.png" alt="Overview screen">
+
+</td>
+<td width="50%">
+
+**Expenses** — filters, search, export, per-row actions
+<img src="docs/screenshots/expenses.png" alt="Expenses screen">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Approvals** — oldest first, decisions scoped by role
+<img src="docs/screenshots/approvals.png" alt="Approvals screen">
+
+</td>
+<td width="50%">
+
+**Budgets** — consumption against ceiling, alert threshold
+<img src="docs/screenshots/budgets.png" alt="Budgets screen">
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Organisation → Members** — roles, departments, approval limits
+<img src="docs/screenshots/organisation-members.png" alt="Organisation members screen">
+
+</td>
+<td width="50%">
+
+**Organisation → Subscriptions** — recurring vendor spend, annualised
+<img src="docs/screenshots/organisation-subscriptions.png" alt="Organisation subscriptions screen">
+
+</td>
+</tr>
+</table>
+
 The access token lives **in memory only**; the refresh token is an `HttpOnly`
 cookie. `localStorage` is readable by any script the page runs, so one XSS bug
 in one dependency would turn into a stolen credential that outlives the tab.
