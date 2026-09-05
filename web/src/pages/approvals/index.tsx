@@ -3,6 +3,7 @@ import { useProfile } from "@/entities/session";
 import { ApiError } from "@/shared/api";
 import { usePagedQuery } from "@/shared/lib/paged";
 import { Card, EmptyState, ErrorNotice, SkeletonRows } from "@/shared/ui/kit";
+import { PageHeader } from "@/shared/ui/PageHeader";
 import { Pagination } from "@/shared/ui/Pagination";
 import { ExpenseTable } from "@/widgets/expense-table";
 
@@ -21,16 +22,15 @@ export function ApprovalsPage() {
   const unlimited = (profile?.approval_limit_minor ?? 0) < 0;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-lg font-semibold">Approvals</h1>
-        <p className="mt-1 text-sm text-ink-600">
-          Oldest first. You cannot decide on your own claim
-          {profile?.department_id ? ", and this queue is limited to your department" : ""}
-          {unlimited ? "." : ", up to your approval limit."}
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title="Approvals"
+        description={`Oldest first. You cannot decide on your own claim${
+          profile?.department_id ? ", and this queue is limited to your department" : ""
+        }${unlimited ? "." : ", up to your approval limit."}`}
+      />
 
+      <div className="flex flex-col gap-5">
       {page.error && (
         <ErrorNotice
           title="Could not load the queue"
@@ -61,6 +61,7 @@ export function ApprovalsPage() {
           </>
         )}
       </Card>
+      </div>
     </div>
   );
 }

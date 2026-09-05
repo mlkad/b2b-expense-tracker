@@ -144,7 +144,7 @@ export function NewBudgetForm({
         </div>
       </form>
 
-      <p className="mt-3 text-xs text-ink-600">
+      <p className="mt-3 text-xs text-muted">
         Two budgets cannot cover the same department and overlapping dates — that would make
         &ldquo;how much is left&rdquo; ambiguous, so the database refuses it.
       </p>

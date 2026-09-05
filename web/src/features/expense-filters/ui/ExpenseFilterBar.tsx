@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { departmentsQuery } from "@/entities/department";
 import { EXPENSE_CATEGORIES, EXPENSE_STATUSES } from "@/entities/expense";
 import { Button, Card, Field, Select, TextInput } from "@/shared/ui/kit";
+import { SearchIcon } from "@/shared/ui/icons";
 
 import { useExpenseFilters, type ExpenseFilters } from "../model/use-expense-filters";
 
@@ -43,16 +44,25 @@ export function ExpenseFilterBar() {
 
   return (
     <Card className="p-4">
-      <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6" onSubmit={onSubmit}>
-        <Field label="Search" htmlFor="q">
+      <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+        {/* The free-text box spans the width and the structured filters sit
+            under it, because they are different questions: one is "find this
+            thing", the others are "narrow to this slice". */}
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint" />
+          <label htmlFor="q" className="sr-only">
+            Search claims by merchant or description
+          </label>
           <TextInput
             id="q"
             value={draft.q}
-            placeholder="Merchant or description"
+            placeholder="Search merchant or description..."
             onChange={(e) => set({ q: e.target.value })}
+            className="rounded-lg bg-elevated pl-10"
           />
-        </Field>
+        </div>
 
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="Status" htmlFor="status">
           <Select id="status" value={draft.status} onChange={(e) => set({ status: e.target.value })}>
             <option value="">Any</option>
@@ -112,7 +122,9 @@ export function ExpenseFilterBar() {
           />
         </Field>
 
-        <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-6">
+        </div>
+
+        <div className="flex items-center gap-2">
           <Button type="submit">Apply</Button>
           <Button type="button" variant="ghost" onClick={() => void clear()}>
             Clear

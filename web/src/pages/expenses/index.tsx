@@ -13,6 +13,8 @@ import {
 import { ApiError } from "@/shared/api";
 import { usePagedQuery } from "@/shared/lib/paged";
 import { Card, EmptyState, ErrorNotice, SkeletonRows } from "@/shared/ui/kit";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { PlusIcon } from "@/shared/ui/icons";
 import { Pagination } from "@/shared/ui/Pagination";
 import { ExpenseTable } from "@/widgets/expense-table";
 
@@ -23,20 +25,25 @@ export function ExpensesPage() {
   const page = usePagedQuery(expenseListQuery(listSearch(filters)));
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Expenses</h1>
-        <div className="flex gap-2">
-          {canExport && <ExportMenu queryFor={(format) => exportSearch(filters, format)} />}
-          <Link
-            to="/expenses/new"
-            className="inline-flex items-center rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700"
-          >
-            New claim
-          </Link>
-        </div>
-      </div>
+    <div>
+      <PageHeader
+        title="Expenses"
+        description="Keep your spending in check. Submit, track and manage all company expenses."
+        actions={
+          <>
+            {canExport && <ExportMenu queryFor={(format) => exportSearch(filters, format)} />}
+            <Link
+              to="/expenses/new"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3.5 py-2 text-sm font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+            >
+              <PlusIcon className="size-4" />
+              New claim
+            </Link>
+          </>
+        }
+      />
 
+      <div className="flex flex-col gap-5">
       <ExpenseFilterBar />
 
       {page.error && (
@@ -73,6 +80,7 @@ export function ExpensesPage() {
           </>
         )}
       </Card>
+      </div>
     </div>
   );
 }

@@ -6,6 +6,8 @@ import { useCan, useProfile } from "@/entities/session";
 import { NewBudgetForm } from "@/features/budget-create";
 import { ApiError } from "@/shared/api";
 import { Button, Card, EmptyState, ErrorNotice, SkeletonRows } from "@/shared/ui/kit";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { PlusIcon } from "@/shared/ui/icons";
 import { BudgetEnvelope } from "@/widgets/budget-envelope";
 
 export function BudgetsPage() {
@@ -17,21 +19,21 @@ export function BudgetsPage() {
   const envelopes = consumption.data ?? [];
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold">Budgets</h1>
-          <p className="mt-1 text-sm text-ink-600">
-            Committed means approved and paid claims. Claims awaiting a decision are not counted, so
-            this is money the organisation has agreed to spend.
-          </p>
-        </div>
-        {canManage && (
-          <Button onClick={() => setCreating((open) => !open)}>
-            {creating ? "Cancel" : "New budget"}
-          </Button>
-        )}
-      </div>
+    <div>
+      <PageHeader
+        title="Budgets"
+        description="Committed means approved and paid claims. Claims awaiting a decision are not counted, so this is money the organisation has agreed to spend."
+        actions={
+          canManage && (
+            <Button onClick={() => setCreating((open) => !open)}>
+              {!creating && <PlusIcon className="size-4" />}
+              {creating ? "Cancel" : "New budget"}
+            </Button>
+          )
+        }
+      />
+
+      <div className="flex flex-col gap-5">
 
       {consumption.error && (
         <ErrorNotice
@@ -66,6 +68,7 @@ export function BudgetsPage() {
           ))}
         </div>
       )}
+      </div>
     </div>
   );
 }

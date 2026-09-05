@@ -55,7 +55,7 @@ export function ReceiptPanel({
   return (
     <Card className="p-5">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-ink-800">Receipts</h2>
+        <h2 className="text-sm font-medium text-fg">Receipts</h2>
         {canAttach && (
           <>
             <input
@@ -82,7 +82,7 @@ export function ReceiptPanel({
                 properly, without scripting the click. */}
             <label
               htmlFor="receipt-input"
-              className={`inline-flex cursor-pointer items-center rounded-md border border-ink-200 bg-white px-3 py-1.5 text-sm font-medium hover:bg-ink-50 ${
+              className={`inline-flex cursor-pointer items-center rounded-md border border-line bg-surface px-3 py-1.5 text-sm font-medium hover:bg-elevated ${
                 busy ? "pointer-events-none opacity-60" : ""
               }`}
             >
@@ -103,14 +103,14 @@ export function ReceiptPanel({
       )}
 
       {items === undefined ? (
-        <p className="text-sm text-ink-600">Loading…</p>
+        <p className="text-sm text-muted">Loading…</p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-ink-600">
+        <p className="text-sm text-muted">
           {canAttach ? "None yet. PDFs and photographs up to 25 MiB." : "None attached."}
         </p>
       ) : (
         <>
-          <ul className="flex flex-col divide-y divide-ink-100">
+          <ul className="flex flex-col divide-y divide-line-soft">
             {items.map((file) => (
               <li key={file.id} className="flex items-center gap-3 py-2.5">
                 <div className="min-w-0 flex-1">
@@ -121,11 +121,11 @@ export function ReceiptPanel({
                     href={api.url(`/attachments/${file.id}/download`)}
                     target="_blank"
                     rel="noreferrer"
-                    className="block truncate text-sm font-medium text-brand-600 hover:underline"
+                    className="block truncate text-sm font-medium text-accent hover:underline"
                   >
                     {file.filename}
                   </a>
-                  <p className="text-xs text-ink-600">
+                  <p className="text-xs text-muted">
                     {formatBytes(file.size_bytes)} · {formatTimestamp(file.created_at)}
                   </p>
                 </div>
@@ -137,7 +137,7 @@ export function ReceiptPanel({
               </li>
             ))}
           </ul>
-          <p className="mt-3 text-xs text-ink-600">
+          <p className="mt-3 text-xs text-muted">
             A receipt on a submitted claim is evidence and cannot be removed.
           </p>
         </>

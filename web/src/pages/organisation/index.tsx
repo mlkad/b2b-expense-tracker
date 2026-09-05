@@ -1,7 +1,11 @@
+import { useState } from "react";
 import { parseAsStringLiteral, useQueryState } from "nuqs";
 
 import { DepartmentManager } from "@/features/department-manage";
 import { sentenceCase } from "@/shared/lib/format";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { Button } from "@/shared/ui/kit";
+import { PlusIcon } from "@/shared/ui/icons";
 
 import { MembersPanel } from "./ui/MembersPanel";
 import { SubscriptionsPanel } from "./ui/SubscriptionsPanel";
@@ -17,18 +21,18 @@ export function OrganisationPage() {
     parseAsStringLiteral(TABS).withDefault("members").withOptions({ history: "replace" }),
   );
 
-  return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-lg font-semibold">Organisation</h1>
+  // Held here rather than inside the panel, because the control that opens the
+  // form sits on the tab row - which belongs to the page.
+  const [inviting, setInviting] = useState(false);
 
-      {/* Real tabs: the roles and arrow-key handling are what let a keyboard
-          user move between panels the way they expect, rather than tabbing
-          through every control in the hidden ones. */}
-      <div
-        role="tablist"
-        aria-label="Organisation sections"
-        className="flex gap-1 border-b border-ink-100"
-      >
+  return (
+    <div>
+      <PageHeader title="Organisation" />
+
+      {/* Real tabs: the roles are what let a screen reader announce this as a
+          tab list rather than as five unrelated buttons above some content. */}
+      <div className="mb-6 flex items-end justify-between gap-4 border-b border-line-soft">
+      <div role="tablist" aria-label="Organisation sections" className="flex gap-6">
         {TABS.map((key) => (
           <button
             key={key}
@@ -38,10 +42,10 @@ export function OrganisationPage() {
             aria-controls={`panel-${key}`}
             id={`tab-${key}`}
             onClick={() => void setTab(key)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
+            className={`-mb-px border-b-2 pb-3 text-sm transition-colors ${
               tab === key
-                ? "border-brand-600 font-medium text-ink-900"
-                : "border-transparent text-ink-600 hover:text-ink-900"
+                ? "border-accent font-medium text-fg"
+                : "border-transparent text-muted hover:text-fg"
             }`}
           >
             {sentenceCase(key)}
@@ -49,8 +53,18 @@ export function OrganisationPage() {
         ))}
       </div>
 
+        {tab === "members" && (
+          <Button className="mb-2" onClick={() => setInviting((open) => !open)}>
+            {!inviting && <PlusIcon className="size-4" />}
+            {inviting ? "Cancel" : "Invite"}
+          </Button>
+        )}
+      </div>
+
       <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
-        {tab === "members" && <MembersPanel />}
+        {tab === "members" && (
+          <MembersPanel inviting={inviting} onDone={() => setInviting(false)} />
+        )}
         {tab === "departments" && <DepartmentManager />}
         {tab === "subscriptions" && <SubscriptionsPanel />}
       </div>

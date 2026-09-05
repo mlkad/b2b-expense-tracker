@@ -1,27 +1,54 @@
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useLocation } from "react-router";
 
 import { useProfile, useSessionStore } from "@/entities/session";
-import { useSignOut } from "@/features/auth";
-import { Badge, Button } from "@/shared/ui/kit";
+import {
+  ApprovalsIcon,
+  BudgetsIcon,
+  ExpensesIcon,
+  LogoMark,
+  OrganisationIcon,
+  OverviewIcon,
+} from "@/shared/ui/icons";
+
+import { AccountMenu } from "./AccountMenu";
+import { GlobalSearch } from "./GlobalSearch";
+import { NotificationBell } from "./NotificationBell";
+import { RailArt, type Scene } from "./RailArt";
 
 interface NavItem {
   to: string;
   label: string;
+  icon: typeof OverviewIcon;
   /** Hidden when the caller lacks it. A convenience, never the enforcement. */
   permission?: string;
 }
 
 const NAV: NavItem[] = [
-  { to: "/", label: "Overview" },
-  { to: "/expenses", label: "Expenses" },
-  { to: "/approvals", label: "Approvals", permission: "expense:approve" },
-  { to: "/budgets", label: "Budgets", permission: "expense:read:team" },
-  { to: "/organisation", label: "Organisation", permission: "member:manage" },
+  { to: "/", label: "Overview", icon: OverviewIcon },
+  { to: "/expenses", label: "Expenses", icon: ExpensesIcon },
+  { to: "/approvals", label: "Approvals", icon: ApprovalsIcon, permission: "expense:approve" },
+  { to: "/budgets", label: "Budgets", icon: BudgetsIcon, permission: "expense:read:team" },
+  { to: "/organisation", label: "Organisation", icon: OrganisationIcon, permission: "member:manage" },
+];
+
+/**
+ * The scene and the line under it change with the section.
+ *
+ * Which is the one thing in the sidebar that is not navigation: it gives each
+ * screen a different weather, so a glance at the edge of the window tells you
+ * where you are before you have read a word.
+ */
+const SCENES: Array<{ match: (path: string) => boolean; scene: Scene; caption: string }> = [
+  { match: (p) => p.startsWith("/expenses"), scene: "ridge", caption: "Small spending. Big progress." },
+  { match: (p) => p.startsWith("/approvals"), scene: "arch", caption: "Faster decisions. Bigger ideas." },
+  { match: (p) => p.startsWith("/budgets"), scene: "road", caption: "Ideas, resourced for reality." },
+  { match: (p) => p.startsWith("/organisation"), scene: "crescent", caption: "People drive possibilities." },
+  { match: () => true, scene: "crescent", caption: "A clear view of the month." },
 ];
 
 export function AppShell() {
   const profile = useProfile();
-  const signOut = useSignOut();
+  const { pathname } = useLocation();
 
   // Read once for the whole list rather than through a hook per item: the
   // number of navigation entries is not allowed to change how many hooks this
@@ -31,58 +58,95 @@ export function AppShell() {
     (item) => !item.permission || (permissions?.includes(item.permission) ?? false),
   );
 
+  const art = SCENES.find((s) => s.match(pathname)) ?? SCENES[SCENES.length - 1];
+
   return (
-    <div className="min-h-dvh">
-      {/* A skip link, first in the tab order. Without it, reaching the table
-          on a page with a dozen navigation items means a dozen tab presses on
+    <div className="flex min-h-dvh">
+      {/* A skip link, first in the tab order. Without it, reaching the table on
+          a page with a dozen navigation items means a dozen tab presses on
           every navigation. */}
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:shadow"
+        className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:rounded-lg focus:bg-elevated focus:px-4 focus:py-2"
       >
         Skip to content
       </a>
 
-      <header className="border-b border-ink-100 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
-          <span className="text-sm font-semibold">{profile?.tenant_name ?? "Expenses"}</span>
-
-          <nav aria-label="Main" className="flex items-center gap-1">
-            {visible.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.to === "/"}
-                className={({ isActive }) =>
-                  `rounded-md px-3 py-1.5 text-sm ${
-                    isActive
-                      ? "bg-ink-100 font-medium text-ink-900"
-                      : "text-ink-600 hover:bg-ink-50"
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-
-          <div className="ml-auto flex items-center gap-3">
-            {profile && (
-              <span className="hidden items-center gap-2 text-sm text-ink-600 sm:flex">
-                {profile.full_name || profile.email}
-                <Badge tone="brand">{profile.role}</Badge>
-              </span>
-            )}
-            <Button variant="ghost" busy={signOut.isPending} onClick={() => signOut.mutate()}>
-              Sign out
-            </Button>
-          </div>
+      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-line-soft bg-rail lg:flex">
+        <div className="flex h-16 items-center gap-2.5 px-6">
+          <LogoMark className="size-6 text-accent" />
+          <span className="text-sm font-semibold tracking-tight">
+            {profile?.tenant_name ?? "Expenses"}
+          </span>
         </div>
-      </header>
 
-      <main id="main" className="mx-auto max-w-6xl px-6 py-8">
-        <Outlet />
-      </main>
+        <nav aria-label="Main" className="flex flex-col gap-0.5 px-3 py-2">
+          {visible.map(({ to, label, icon: Glyph }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              className={({ isActive }) =>
+                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                  isActive
+                    ? "bg-elevated font-medium text-fg"
+                    : "text-muted hover:bg-surface hover:text-fg"
+                }`
+              }
+            >
+              <Glyph className="size-[18px] shrink-0" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+
+        <RailArt scene={art.scene} caption={art.caption} />
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b border-line-soft bg-canvas/85 px-5 backdrop-blur-md sm:px-8">
+          {/* The mark repeats here only where the sidebar is not on screen. */}
+          <span className="flex items-center gap-2.5 lg:hidden">
+            <LogoMark className="size-6 text-accent" />
+            <span className="text-sm font-semibold">{profile?.tenant_name ?? "Expenses"}</span>
+          </span>
+
+          <GlobalSearch />
+
+          <div className="ml-auto flex items-center gap-1.5">
+            <NotificationBell />
+            <AccountMenu />
+          </div>
+        </header>
+
+        <main id="main" className="flex-1 px-5 py-8 sm:px-8">
+          <div className="mx-auto max-w-6xl">
+            <Outlet />
+          </div>
+        </main>
+
+        {/* The navigation, for the widths that have no room for a rail. */}
+        <nav
+          aria-label="Main"
+          className="sticky bottom-0 z-30 flex justify-around border-t border-line-soft bg-canvas/95 backdrop-blur-md lg:hidden"
+        >
+          {visible.map(({ to, label, icon: Glyph }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              className={({ isActive }) =>
+                `flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] ${
+                  isActive ? "text-accent" : "text-faint"
+                }`
+              }
+            >
+              <Glyph className="size-5" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+      </div>
     </div>
   );
 }

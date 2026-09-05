@@ -41,7 +41,7 @@ export function Modal({
         // them apart without a wrapper div that would break the backdrop.
         if (event.target === ref.current) onClose();
       }}
-      className="w-full max-w-md rounded-lg border border-ink-100 p-0 backdrop:bg-ink-900/40 open:m-auto"
+      className="w-full max-w-md rounded-xl border border-line bg-elevated p-0 text-fg shadow-2xl shadow-black/60 backdrop:bg-black/65 backdrop:backdrop-blur-sm open:m-auto"
     >
       <div className="flex flex-col gap-4 p-6">
         <h2 id="modal-title" className="text-base font-semibold">

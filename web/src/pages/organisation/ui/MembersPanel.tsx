@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { membersQuery } from "@/entities/member";
@@ -6,7 +5,9 @@ import { useProfile } from "@/entities/session";
 import { InviteMemberForm } from "@/features/member-invite";
 import { ApiError } from "@/shared/api";
 import { formatMinor } from "@/shared/lib/money";
-import { Badge, Button, Card, EmptyState, ErrorNotice, SkeletonRows } from "@/shared/ui/kit";
+import { Badge, Card, EmptyState, ErrorNotice, SkeletonRows, TableHead } from "@/shared/ui/kit";
+import { Monogram } from "@/shared/ui/Monogram";
+import { MoreIcon } from "@/shared/ui/icons";
 
 function statusTone(status: string) {
   if (status === "active") return "positive" as const;
@@ -14,21 +15,21 @@ function statusTone(status: string) {
   return "danger" as const;
 }
 
-export function MembersPanel() {
+export function MembersPanel({
+  inviting,
+  onDone,
+}: {
+  inviting: boolean;
+  onDone: () => void;
+}) {
   const profile = useProfile();
-  const [inviting, setInviting] = useState(false);
   const members = useQuery(membersQuery());
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-ink-600">
-          You can only invite and administer members below your own role.
-        </p>
-        <Button onClick={() => setInviting((open) => !open)}>
-          {inviting ? "Cancel" : "Invite"}
-        </Button>
-      </div>
+      <p className="text-sm text-muted">
+        You can only invite and administer members below your own role.
+      </p>
 
       {members.error && (
         <ErrorNotice
@@ -38,9 +39,7 @@ export function MembersPanel() {
         />
       )}
 
-      {inviting && (
-        <InviteMemberForm actorRole={profile?.role} onInvited={() => setInviting(false)} />
-      )}
+      {inviting && <InviteMemberForm actorRole={profile?.role} onInvited={onDone} />}
 
       <Card>
         {members.isPending ? (
@@ -48,48 +47,72 @@ export function MembersPanel() {
         ) : (members.data?.length ?? 0) === 0 ? (
           <EmptyState title="Nobody else yet" />
         ) : (
-          <table className="w-full text-sm">
-            <caption className="sr-only">Members of this organisation</caption>
-            <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-600">
-                <th scope="col" className="px-4 py-2.5 font-medium">Person</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Role</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Department</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Status</th>
-                <th scope="col" className="px-4 py-2.5 text-right font-medium">Approval limit</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-ink-100">
-              {(members.data ?? []).map((member) => (
-                <tr key={member.id}>
-                  <td className="px-4 py-3">
-                    <span className="font-medium">{member.full_name || member.email}</span>
-                    {member.full_name && (
-                      <span className="ml-2 text-xs text-ink-600">{member.email}</span>
-                    )}
-                    {member.id === profile?.membership_id && (
-                      <span className="ml-2 text-xs text-ink-600">(you)</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge tone="brand">{member.role}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-ink-600">{member.department_name ?? "—"}</td>
-                  <td className="px-4 py-3">
-                    <Badge tone={statusTone(member.status)}>{member.status}</Badge>
-                  </td>
-                  <td className="px-4 py-3 text-right tabular-nums text-ink-600">
-                    {member.approval_limit_minor == null
-                      ? "role default"
-                      : formatMinor(
-                          member.approval_limit_minor,
-                          profile?.default_currency ?? "USD",
-                        )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[42rem] text-sm">
+              <caption className="sr-only">Members of this organisation</caption>
+              <TableHead>
+                <th scope="col" className="py-3 pr-4 pl-5 font-medium">Person</th>
+                <th scope="col" className="px-4 py-3 font-medium">Role</th>
+                <th scope="col" className="px-4 py-3 font-medium">Department</th>
+                <th scope="col" className="px-4 py-3 font-medium">Status</th>
+                <th scope="col" className="px-4 py-3 text-right font-medium">Approval limit</th>
+                <th scope="col" className="w-12 py-3 pr-4 pl-2">
+                  <span className="sr-only">Actions</span>
+                </th>
+              </TableHead>
+              <tbody className="divide-y divide-line-soft">
+                {(members.data ?? []).map((member) => (
+                  <tr key={member.id} className="transition-colors hover:bg-surface/70">
+                    <td className="py-3.5 pr-4 pl-5">
+                      <span className="flex items-center gap-2.5">
+                        <Monogram name={member.full_name || member.email} />
+                        <span>
+                          <span className="font-medium">{member.full_name || member.email}</span>
+                          {member.full_name && (
+                            <span className="ml-2 text-xs text-faint">{member.email}</span>
+                          )}
+                          {member.id === profile?.membership_id && (
+                            <span className="ml-2 text-xs text-faint">(you)</span>
+                          )}
+                        </span>
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <Badge tone="brand">{member.role}</Badge>
+                    </td>
+                    <td className="px-4 py-3.5 text-muted">{member.department_name ?? "—"}</td>
+                    <td className="px-4 py-3.5">
+                      <Badge tone={statusTone(member.status)}>{member.status}</Badge>
+                    </td>
+                    <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                      {member.approval_limit_minor == null
+                        ? "role default"
+                        : formatMinor(
+                            member.approval_limit_minor,
+                            profile?.default_currency ?? "USD",
+                          )}
+                    </td>
+                    <td className="py-3.5 pr-4 pl-2 text-right">
+                      {/* Editing a membership - the role, the department, the
+                          approval limit - is a screen this build does not have
+                          yet, so the control that would open it is disabled
+                          rather than absent: a column that appears later moves
+                          every figure in the table sideways. */}
+                      <button
+                        type="button"
+                        disabled
+                        aria-label={`Manage ${member.full_name || member.email} (not available yet)`}
+                        title="Managing a membership is not available yet"
+                        className="inline-grid size-7 cursor-not-allowed place-items-center rounded-md text-faint/50"
+                      >
+                        <MoreIcon className="size-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
     </div>

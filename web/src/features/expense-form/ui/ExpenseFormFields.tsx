@@ -81,7 +81,7 @@ export function ExpenseFormFields({ id }: { id?: string }) {
   }
 
   if (editing && existing.isPending) {
-    return <Card className="p-6 text-sm text-ink-600">Loading…</Card>;
+    return <Card className="p-6 text-sm text-muted">Loading…</Card>;
   }
 
   // The server names this field after what it stores; the form after what is
@@ -92,7 +92,7 @@ export function ExpenseFormFields({ id }: { id?: string }) {
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
       <Link
         to={editing ? `/expenses/${id}` : "/expenses"}
-        className="text-sm text-brand-600 hover:underline"
+        className="text-sm text-accent hover:underline"
       >
         ← Back
       </Link>
@@ -198,7 +198,7 @@ export function ExpenseFormFields({ id }: { id?: string }) {
                 maxLength={4000}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                className="rounded-md border border-ink-200 bg-white px-3 py-2 text-sm outline-none"
+                className="rounded-md border border-line bg-surface px-3 py-2 text-sm outline-none"
               />
             </Field>
           </div>
@@ -209,7 +209,7 @@ export function ExpenseFormFields({ id }: { id?: string }) {
             </Button>
             <Link
               to={editing ? `/expenses/${id}` : "/expenses"}
-              className="inline-flex items-center rounded-md px-3.5 py-2 text-sm font-medium text-ink-600 hover:bg-ink-100"
+              className="inline-flex items-center rounded-md px-3.5 py-2 text-sm font-medium text-muted hover:bg-elevated"
             >
               Cancel
             </Link>
@@ -217,7 +217,7 @@ export function ExpenseFormFields({ id }: { id?: string }) {
         </form>
       </Card>
 
-      <p className="text-xs text-ink-600">
+      <p className="text-xs text-muted">
         A new claim is created as a draft. Nothing is sent for approval until you submit it, and it
         can be edited freely until then.
       </p>

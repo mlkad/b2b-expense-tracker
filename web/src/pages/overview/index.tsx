@@ -7,12 +7,13 @@ import { useCan, useProfile } from "@/entities/session";
 import { ApiError } from "@/shared/api";
 import { statusLabel } from "@/shared/lib/format";
 import { formatMoney } from "@/shared/lib/money";
-import { Badge, Card, EmptyState, ErrorNotice, SkeletonRows } from "@/shared/ui/kit";
+import { Badge, Card, EmptyState, ErrorNotice, SkeletonRows, TableHead } from "@/shared/ui/kit";
+import { PageHeader } from "@/shared/ui/PageHeader";
 
 const STATUS_TONE = {
   draft: "neutral",
   pending_approval: "caution",
-  approved: "brand",
+  approved: "info",
   rejected: "danger",
   paid: "positive",
 } as const;
@@ -31,16 +32,21 @@ export function OverviewPage() {
   const totals = summary.data;
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-lg font-semibold">Overview</h1>
+    <div>
+      <PageHeader
+        title="Overview"
+        description="Where the month stands: what has been filed, what has been agreed, and where it is going."
+      />
+
+      <div className="flex flex-col gap-6">
 
       {entitlement.data?.in_grace_period && (
         <div
           role="status"
-          className="rounded-md border border-caution-700/20 bg-caution-50 px-4 py-3 text-sm"
+          className="rounded-md border border-tone-caution-fg/25 bg-tone-caution px-4 py-3 text-sm"
         >
-          <p className="font-medium text-caution-700">A payment has not gone through</p>
-          <p className="mt-1 text-ink-800">
+          <p className="font-medium text-tone-caution-fg">A payment has not gone through</p>
+          <p className="mt-1 text-fg">
             Nothing is restricted while the card is retried. Update the payment details to avoid
             dropping to the free plan.
           </p>
@@ -56,7 +62,7 @@ export function OverviewPage() {
       )}
 
       <section aria-labelledby="by-status">
-        <h2 id="by-status" className="mb-3 text-sm font-medium text-ink-800">
+        <h2 id="by-status" className="mb-3 text-sm font-medium text-fg">
           Claims by status
         </h2>
 
@@ -77,7 +83,7 @@ export function OverviewPage() {
               title="No claims yet"
               detail="Once somebody files a claim, the totals appear here."
               action={
-                <Link className="text-sm text-brand-600 underline" to="/expenses/new">
+                <Link className="text-sm text-accent underline" to="/expenses/new">
                   File the first one
                 </Link>
               }
@@ -88,8 +94,10 @@ export function OverviewPage() {
             {totals.by_status.map((row) => (
               <Card key={row.status} className="p-4">
                 <Badge tone={STATUS_TONE[row.status] ?? "neutral"}>{statusLabel(row.status)}</Badge>
-                <p className="mt-3 text-xl font-semibold tabular-nums">{formatMoney(row.total)}</p>
-                <p className="text-xs text-ink-600">
+                <p className="mt-3.5 text-xl font-semibold tabular-nums">
+                  {formatMoney(row.total)}
+                </p>
+                <p className="mt-0.5 text-xs text-faint">
                   {row.claim_count} {row.claim_count === 1 ? "claim" : "claims"}
                 </p>
               </Card>
@@ -100,53 +108,59 @@ export function OverviewPage() {
 
       {totals && totals.by_department.length > 0 && (
         <section aria-labelledby="by-department">
-          <h2 id="by-department" className="mb-3 text-sm font-medium text-ink-800">
+          <h2 id="by-department" className="mb-3 text-sm font-medium text-fg">
             Committed spend by department
           </h2>
-          <p className="mb-3 text-xs text-ink-600">
+          <p className="mb-3 text-xs text-muted">
             Approved and paid claims only. Claims awaiting a decision are not counted, so this is
             money the organisation has agreed to spend.
           </p>
 
           <Card>
-            <table className="w-full text-sm">
-              <caption className="sr-only">Committed spend by department</caption>
-              <thead>
-                <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-600">
-                  <th scope="col" className="px-4 py-2.5 font-medium">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[30rem] text-sm">
+                <caption className="sr-only">Committed spend by department</caption>
+                <TableHead>
+                  <th scope="col" className="py-3 pr-4 pl-5 font-medium">
                     Department
                   </th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-medium">
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
                     Claims
                   </th>
-                  <th scope="col" className="px-4 py-2.5 text-right font-medium">
+                  <th scope="col" className="px-4 py-3 pr-5 text-right font-medium">
                     Total
                   </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ink-100">
-                {totals.by_department.map((row) => (
-                  <tr key={row.department_id ?? "unassigned"}>
-                    <td className="px-4 py-3">{row.department_name}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{row.claim_count}</td>
-                    {/* tabular-nums so a column of figures lines up on the
-                        decimal point rather than wandering by glyph width. */}
-                    <td className="px-4 py-3 text-right font-medium tabular-nums">
-                      {formatMoney(row.total)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </TableHead>
+                <tbody className="divide-y divide-line-soft">
+                  {totals.by_department.map((row) => (
+                    <tr
+                      key={row.department_id ?? "unassigned"}
+                      className="transition-colors hover:bg-surface/70"
+                    >
+                      <td className="py-3.5 pr-4 pl-5">{row.department_name}</td>
+                      <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                        {row.claim_count}
+                      </td>
+                      {/* tabular-nums so a column of figures lines up on the
+                          decimal point rather than wandering by glyph width. */}
+                      <td className="px-4 py-3.5 pr-5 text-right font-medium tabular-nums">
+                        {formatMoney(row.total)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </Card>
         </section>
       )}
 
       {entitlement.data && profile && (
-        <p className="text-xs text-ink-600">
-          {profile.tenant_name} is on the <strong>{entitlement.data.plan}</strong> plan.
+        <p className="text-xs text-faint">
+          {profile.tenant_name} is on the <strong className="text-muted">{entitlement.data.plan}</strong> plan.
         </p>
       )}
+      </div>
     </div>
   );
 }

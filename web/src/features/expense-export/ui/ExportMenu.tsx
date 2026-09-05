@@ -2,6 +2,7 @@ import { useState } from "react";
 import { z } from "zod";
 
 import { api, ApiError, decode } from "@/shared/api";
+import { ChevronDownIcon } from "@/shared/ui/icons";
 
 const ticketSchema = z.object({ url: z.string() });
 
@@ -65,19 +66,32 @@ export function ExportMenu({
   }
 
   return (
-    <div className="flex items-center gap-1 rounded-md border border-ink-200 bg-white px-2 py-1">
-      <span className="px-1 text-xs text-ink-600">{failed ?? "Export"}</span>
+    <div className="flex items-center gap-1.5">
+      {/* A label, not a control: the three formats beside it are the controls,
+          and hiding them behind a disclosure would add a click to every export
+          to save 90 pixels. */}
+      <span className="hidden items-center gap-1 rounded-lg border border-line-soft px-3 py-2 text-sm text-muted sm:inline-flex">
+        {failed ?? "Export"}
+        <ChevronDownIcon className="size-3.5" />
+      </span>
       {FORMATS.map((format) => (
         <button
           key={format}
           type="button"
           disabled={busy !== null}
           onClick={() => void download(format)}
-          className="rounded px-2 py-1 text-xs font-medium uppercase text-brand-600 hover:bg-ink-50 disabled:text-ink-400"
+          className="rounded-lg border border-line-soft px-3 py-2 text-xs font-medium tracking-wide text-muted uppercase transition-colors hover:border-line hover:bg-elevated hover:text-fg disabled:text-faint"
         >
           {busy === format ? "…" : format}
         </button>
       ))}
+      {/* The failure has to be reachable at the width where the label above is
+          hidden, and it is an alert either way. */}
+      {failed && (
+        <span role="alert" className="text-xs text-tone-danger-fg sm:sr-only">
+          {failed}
+        </span>
+      )}
     </div>
   );
 }

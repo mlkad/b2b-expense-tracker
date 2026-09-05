@@ -3,6 +3,9 @@ import { statusLabel } from "@/shared/lib/format";
 import type { ExpenseStatus } from "../model/schema";
 
 /**
+ * Approved is blue and the role badges are purple, deliberately: purple is the
+ * accent, and an accent that also means "approved" stops meaning anything.
+ *
  * Colour carries meaning here, so it is never the only thing that does: every
  * badge also spells the status out. Roughly one man in twelve cannot tell the
  * red from the green, and a table that distinguishes "rejected" from "approved"
@@ -11,7 +14,7 @@ import type { ExpenseStatus } from "../model/schema";
 const TONES: Record<ExpenseStatus, Tone> = {
   draft: "neutral",
   pending_approval: "caution",
-  approved: "brand",
+  approved: "info",
   rejected: "danger",
   paid: "positive",
 };

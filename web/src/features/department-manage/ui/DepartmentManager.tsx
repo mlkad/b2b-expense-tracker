@@ -5,6 +5,7 @@ import { departmentsQuery } from "@/entities/department";
 import { ApiError } from "@/shared/api";
 import { useFormErrors } from "@/shared/lib/form";
 import { Button, Card, EmptyState, ErrorNotice, Field, SkeletonRows, TextInput } from "@/shared/ui/kit";
+import { Monogram } from "@/shared/ui/Monogram";
 
 import {
   departmentSchema,
@@ -80,10 +81,16 @@ export function DepartmentManager() {
             detail="Claims can be filed without one, but budgets need them."
           />
         ) : (
-          <ul className="divide-y divide-ink-100">
+          <ul className="divide-y divide-line-soft">
             {(departments.data ?? []).map((department) => (
-              <li key={department.id} className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm font-medium">{department.name}</span>
+              <li
+                key={department.id}
+                className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-surface/70"
+              >
+                <span className="flex items-center gap-2.5 text-sm font-medium">
+                  <Monogram name={department.name} />
+                  {department.name}
+                </span>
                 <Button variant="ghost" onClick={() => archive.mutate(department.id)}>
                   Archive
                 </Button>
@@ -93,7 +100,7 @@ export function DepartmentManager() {
         )}
       </Card>
 
-      <p className="text-xs text-ink-600">
+      <p className="text-xs text-muted">
         Archiving retires a department without deleting it. Claims filed against it stay
         attributable, which is the point of having had one.
       </p>

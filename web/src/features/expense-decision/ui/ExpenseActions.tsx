@@ -118,7 +118,7 @@ export function ExpenseActions({
       )}
 
       <Modal open={pending !== null} title={pending ? actionLabel(pending) : ""} onClose={close}>
-        {pending && CONFIRM[pending] && <p className="text-sm text-ink-600">{CONFIRM[pending]}</p>}
+        {pending && CONFIRM[pending] && <p className="text-sm text-muted">{CONFIRM[pending]}</p>}
 
         {prompt && (
           <Field

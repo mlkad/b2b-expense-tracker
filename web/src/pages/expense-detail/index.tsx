@@ -46,7 +46,7 @@ export function ExpenseDetailPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Link to="/expenses" className="text-sm text-brand-600 hover:underline">
+          <Link to="/expenses" className="text-sm text-accent hover:underline">
             ← All claims
           </Link>
           <h1 className="mt-1 flex items-center gap-3 text-lg font-semibold">
@@ -61,7 +61,7 @@ export function ExpenseDetailPage() {
         {mine && detail.status === "draft" && (
           <Link
             to={`/expenses/${detail.id}/edit`}
-            className="inline-flex items-center rounded-md border border-ink-200 bg-white px-3.5 py-2 text-sm font-medium hover:bg-ink-50"
+            className="inline-flex items-center rounded-md border border-line bg-surface px-3.5 py-2 text-sm font-medium hover:bg-elevated"
           >
             Edit
           </Link>
@@ -70,7 +70,7 @@ export function ExpenseDetailPage() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="p-5 lg:col-span-2">
-          <h2 className="mb-4 text-sm font-medium text-ink-800">Details</h2>
+          <h2 className="mb-4 text-sm font-medium text-fg">Details</h2>
           <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
             <Detail term="Spent on" value={formatDate(detail.spent_at)} />
             <Detail term="Category" value={sentenceCase(detail.category)} />
@@ -85,7 +85,7 @@ export function ExpenseDetailPage() {
 
           {detail.description && (
             <>
-              <h3 className="mt-5 mb-1 text-xs font-medium uppercase tracking-wide text-ink-600">
+              <h3 className="mt-5 mb-1 text-xs font-medium uppercase tracking-wide text-muted">
                 Description
               </h3>
               <p className="text-sm">{detail.description}</p>
@@ -93,8 +93,8 @@ export function ExpenseDetailPage() {
           )}
 
           {detail.decision_note && (
-            <div className="mt-5 border-l-2 border-ink-200 pl-3">
-              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-600">
+            <div className="mt-5 border-l-2 border-line pl-3">
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">
                 Decision note
               </h3>
               <p className="text-sm">{detail.decision_note}</p>
@@ -113,22 +113,22 @@ export function ExpenseDetailPage() {
           />
 
           <Card className="p-5">
-            <h2 className="mb-4 text-sm font-medium text-ink-800">History</h2>
+            <h2 className="mb-4 text-sm font-medium text-fg">History</h2>
             {(history.data ?? []).length === 0 ? (
-              <p className="text-sm text-ink-600">Nothing recorded yet.</p>
+              <p className="text-sm text-muted">Nothing recorded yet.</p>
             ) : (
               <ol className="flex flex-col gap-3">
                 {(history.data ?? []).map((event) => (
-                  <li key={event.id} className="border-l-2 border-ink-100 pl-3">
+                  <li key={event.id} className="border-l-2 border-line-soft pl-3">
                     <p className="text-sm font-medium">{sentenceCase(event.action)}</p>
-                    <p className="text-xs text-ink-600">
+                    <p className="text-xs text-muted">
                       {formatTimestamp(event.occurred_at)}
                       {event.actor_email ? ` · ${event.actor_email}` : " · system"}
                     </p>
                     {/* The amount as it was at the time, not today's. An audit
                         row saying "approved" without saying what was approved
                         is useless once the claim has been revised. */}
-                    <p className="text-xs text-ink-600 tabular-nums">
+                    <p className="text-xs text-muted tabular-nums">
                       {formatMoney(event.amount)}
                     </p>
                     {event.reason && <p className="mt-1 text-xs">{event.reason}</p>}
@@ -148,7 +148,7 @@ export function ExpenseDetailPage() {
 function Detail({ term, value }: { term: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-ink-600">{term}</dt>
+      <dt className="text-xs uppercase tracking-wide text-muted">{term}</dt>
       <dd className="mt-0.5 text-sm">{value}</dd>
     </div>
   );

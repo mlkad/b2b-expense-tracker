@@ -73,7 +73,11 @@ await page.getByRole("heading", { name: "Overview" }).waitFor({ timeout: 15000 }
 await page.waitForLoadState("networkidle");
 await page.screenshot({ path: `${out}/02-overview.png`, fullPage: true });
 
-const nav = await page.locator("nav a").allInnerTexts();
+// The sidebar specifically. There are two navigations in the markup - the
+// rail and, below the large breakpoint, a bottom bar - and exactly one is
+// displayed at a time. A plain CSS locator does not care about that and would
+// list every item twice.
+const nav = await page.locator("aside nav a").allInnerTexts();
 check(nav.includes("Expenses"), `the navigation rendered: ${nav.join(", ")}`);
 
 const totals = await page.locator("main p.text-xl").allInnerTexts();

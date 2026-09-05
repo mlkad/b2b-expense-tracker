@@ -27,7 +27,7 @@ export function Router() {
       // Deliberately plain. This is on screen for one request while the session
       // is recovered from the refresh cookie, and a skeleton of a layout the
       // visitor may not be entitled to see would flash and vanish.
-      <div className="grid min-h-dvh place-items-center text-sm text-ink-600" role="status">
+      <div className="grid min-h-dvh place-items-center text-sm text-muted" role="status">
         Loading…
       </div>
     );

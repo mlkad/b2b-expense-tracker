@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { z } from "zod";
 
 import { Button, Card, ErrorNotice, Field, TextInput } from "@/shared/ui/kit";
+import { LogoMark } from "@/shared/ui/icons";
 import { useFormErrors } from "@/shared/lib/form";
 
 import { useSignIn } from "../model/mutations";
@@ -50,9 +51,26 @@ export function SignInForm() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6">
-      <h1 className="mb-1 text-xl font-semibold">Expense Tracker</h1>
-      <p className="mb-6 text-sm text-ink-600">Sign in to your organisation.</p>
+    <main className="relative isolate grid min-h-dvh place-items-center px-6 py-12">
+      {/* The same scene as the sidebar, so the product looks like itself before
+          anybody has signed in to see the rest of it. */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10"
+        style={{
+          backgroundImage: [
+            "radial-gradient(45% 32% at 50% 8%, rgba(139,111,232,0.28), transparent 70%)",
+            "radial-gradient(60% 40% at 50% 108%, rgba(203,182,247,0.12), transparent 65%)",
+          ].join(", "),
+        }}
+      />
+
+      <div className="w-full max-w-sm">
+      <div className="mb-7 flex flex-col items-center text-center">
+        <LogoMark className="size-9 text-accent" />
+        <h1 className="mt-4 text-xl font-semibold tracking-tight">Expense Tracker</h1>
+        <p className="mt-1 text-sm text-muted">Sign in to your organisation.</p>
+      </div>
 
       <Card className="p-6">
         <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
@@ -116,6 +134,7 @@ export function SignInForm() {
           </Button>
         </form>
       </Card>
+      </div>
     </main>
   );
 }

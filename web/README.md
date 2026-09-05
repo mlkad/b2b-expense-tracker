@@ -10,6 +10,32 @@ npm run layers   # the Feature-Sliced import rules on their own
 npm run smoke    # drives the running app with a real browser
 ```
 
+## The look
+
+A dark theme, and a dark theme is not an inverted light one. Pure black under
+pure white vibrates and is tiring to read for an hour, so the surfaces carry a
+slight violet cast and the brightest text stops short of `#fff`. Three surfaces
+stack — canvas, surface, elevated — and everything is a token in
+`app/index.css`; no component reaches for a hex.
+
+There is **one accent**, a light lavender, and it is used light-on-dark: a
+saturated purple fill with white text fails a contrast check at 14px, and on a
+page this dark the brightest thing on it should be the one action worth taking.
+Which is also why "Approved" is blue rather than purple — an accent that also
+means "approved" stops meaning anything.
+
+`color-scheme: dark` is set on the root. Without it the browser opens a white
+calendar out of a dark date field, which is the most obvious way a dark theme
+announces that it was applied by hand.
+
+Two things are drawn rather than downloaded. The **sidebar scenes** are a few
+SVG polygons over a gradient — four full-bleed photographs would be most of this
+application's transfer size and would need art direction at three breakpoints.
+The **tile beside each merchant** is a letter on a colour hashed from the name,
+not a favicon: fetching one means guessing a domain, handing a third party every
+merchant a user has ever claimed for, and rendering a broken square for the
+corner shop with no website.
+
 ## Layout
 
 Feature-Sliced. Six layers, and an import may only go **downwards**:
