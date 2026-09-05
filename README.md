@@ -112,31 +112,54 @@ between the two.
 
 ## Why it's built this way
 
-### Tenant isolation lives in the database, not in application code
+### System topology
 
-The usual approach to multi-tenancy is `WHERE tenant_id = $1` on every query.
-That works until the one query somebody forgets — and a forgotten filter here
-is not a bug, it is one customer reading another's expense reports.
+```mermaid
+flowchart LR
+    Dashboard["Dashboard<br/>React · :5173"]
+    API["API<br/>chi · :8080"]
+    Worker["Worker<br/>Asynq consumer"]
+    PG[("PostgreSQL<br/>RLS-enforced")]
+    Redis[("Redis<br/>Asynq queues")]
+    Storage[("Object storage<br/>S3-compatible")]
+    SMTP[("SMTP")]
+    Gateway["Stripe Payment &amp; Subscription Gateway<br/>separate repo · owns the Stripe key"]
 
-So isolation is enforced three ways at once, and none of them is trusted alone:
+    Dashboard -- "HTTPS + bearer JWT" --> API
+    API -- "reads / writes" --> PG
+    API -- "enqueues job" --> Redis
+    Worker -- "consumes" --> Redis
+    Worker -- "reads / writes" --> PG
+    Worker -- "presigned PUT" --> Storage
+    Worker -- "sends mail" --> SMTP
+    API -. "checkout / portal calls" .-> Gateway
+    Gateway -. "signed relay: subscription events" .-> API
+```
 
-- **The token.** The tenant id travels in a signed JWT claim. There is no
-  `X-Tenant-Id` header and no tenant path segment — either would be a value
-  the client gets to pick.
-- **The transaction.** `WithTenantTx` binds the session and hands back a
-  `*TenantConn` whose underlying `pgx.Tx` is unexported, with no public
-  constructor. A repository method that takes a `*TenantConn` cannot be
-  called outside a bound transaction — not by convention, by the type system.
-- **The database.** Every tenant table carries a `RESTRICTIVE` row-level
-  security policy comparing `tenant_id` against a session variable, with
-  `FORCE ROW LEVEL SECURITY` so even the table owner is subject to it. An
-  unbound session reads as *no rows*, never as *all rows*.
+The dashboard only ever calls the API — never Postgres, Redis or the gateway
+directly. The worker is what actually reaches object storage and SMTP, so a
+slow upload or mail provider never holds an API request open. Billing is a
+signed relay in, not a live call out, on every request.
 
-The queries still say `WHERE tenant_id = $1` on top of that — redundant with
-RLS on purpose, so the planner gets a constant on the leading index column and
-the queries stay correct even if a policy is ever disabled by mistake.
+### Tenant isolation, three layers
 
-Each of five failure modes here has its own test, verified by breaking the
+```mermaid
+flowchart LR
+    JWT["Signed JWT<br/>claim: tenant_id<br/><i>no header, no path segment</i>"]
+    Tx["WithTenantTx<br/>set_config('app.tenant_id', id, true)<br/><i>is_local → reverted on COMMIT</i>"]
+    Conn["*TenantConn<br/>unexported pgx.Tx, no constructor<br/><i>won't compile unbound</i>"]
+    RLS["RESTRICTIVE policy, every tenant table<br/>tenant_id = current_setting('app.tenant_id')<br/>FORCE ROW LEVEL SECURITY<br/><i>unbound session → NULL → 0 rows, never all</i>"]
+
+    JWT --> Tx --> Conn -- "query executes inside the bound tx" --> RLS
+```
+
+Three independent checks, not one mechanism repeated: the JWT is the only
+place a tenant id comes from, the Go type system refuses to run a query
+without a bound transaction, and Postgres refuses a mismatched row even to
+the table's owner. The one deliberate widening, `WithSystemTx`, is for jobs
+that legitimately span tenants — logged at `warn` on every call.
+
+Five failure modes here each have their own test, verified by breaking the
 code first and watching the test catch it: a session-level `SET` leaking a
 tenant id across a pooled connection, connecting as a role RLS doesn't apply
 to, a permissive policy accidentally widening access, a race between two
@@ -145,66 +168,39 @@ memory.
 
 ### The approval flow is a table, not a switch statement
 
-```
-                    ┌──────────────── withdraw ────────────────┐
-                    v                                          │
-  (new) ──────> draft ────── submit ──────> pending_approval ──┤
-                  ^                              │             │
-                  │                     approve  │  reject     │
-                  │                         ┌────┴────┐        │
-               revise                       v         v        │
-                  └───────────────────── rejected   approved ──┘
-                                                       │
-                                                      pay
-                                                       v
-                                                     paid  (terminal)
+```mermaid
+stateDiagram-v2
+    [*] --> draft
+    draft --> pending_approval: submit
+    pending_approval --> draft: withdraw (submitter)
+    pending_approval --> approved: approve (not submitter, within limit and dept)
+    pending_approval --> rejected: reject (reason required)
+    rejected --> draft: revise (submitter, bumps revision)
+    approved --> paid: pay
+    paid --> [*]
 ```
 
 Transitions are rows in a table — `from`, `action`, `to`, the permission and
-guards required — so a test can assert directly that every state is reachable,
-every non-terminal state has an exit, and no transition skips its checks. A
-rejected claim can only re-enter as a revision, which bumps a revision counter,
-so the ledger always shows which version of a claim an approver decided on. An
-approved claim cannot be un-approved — history isn't rewritten, a mistake is
-corrected with a compensating claim — and separation of duties is enforced per
-claim: nobody decides on their own submission, and the person who approved a
-claim is not the one who settles it.
+guards required — so a test asserts directly that every state is reachable,
+every non-terminal state has an exit, and no transition skips its checks.
+Three absences carry as much meaning as the edges: no `rejected → pending`
+(a resubmission always bumps the revision counter), no `approved → rejected`
+(a mistaken approval is corrected with a compensating claim, not by rewriting
+history), and `paid` has no way out. Separation of duties is enforced per
+claim — nobody decides on their own submission, and the approver of a claim
+is not the one who settles it.
 
-### Exports stream, so file size never becomes memory pressure
+### Everything else in one pass
 
-A four-year export is on the order of 12 MB of spreadsheet. Buffering it means
-12 MB held per concurrent download — an endpoint whose memory footprint is set
-by the customer's data volume. Nothing here is buffered: XLSX is written as a
-ZIP of XML directly onto the response socket, PDF holds exactly one page at a
-time with the cross-reference table built from a running byte count, and CSV
-holds one row. Heap usage measured at 1,000 rows and at 200,000 rows comes out
-the same.
-
-### Billing never sits on the request path
-
-Subscription state for the organisation is a local read-only projection kept
-in sync by a signed relay from the billing service, not a live call made
-during a request. A billing outage can't lock a tenant out of their own
-records, and a card being retried keeps the tenant on their plan rather than
-downgrading them mid-dunning.
-
-### Object storage does the work an API server shouldn't
-
-Receipts go straight from the browser to S3-compatible storage: the API signs
-a URL, the browser uploads directly, and confirmation checks the object that
-actually landed rather than trusting what the client claims it sent. A 25 MB
-file never passes through the API process holding a database connection.
-Exports the browser downloads work the same way — a short-lived signed link
-bound to the exact query, so widening it in the address bar doesn't widen what
-it returns.
-
-### The API contract is checked, not just written
-
-[`api/openapi.json`](api/openapi.json) — 47 operations, OpenAPI 3.1 — is
-verified against the live chi router in both directions on every test run, and
-a second check refuses any operation with no summary, no tag, or no documented
-error response. The spec describes the API that's actually running, because
-nothing else would catch it drifting.
+- **Exports stream.** XLSX is a ZIP of XML written straight onto the response
+  socket, PDF holds one page at a time, CSV holds one row — heap usage at
+  1,000 rows and 200,000 rows comes out the same.
+- **Object storage does the work an API server shouldn't.** Receipts and
+  exports move through short-lived signed URLs; a 25 MB upload never passes
+  through the process holding a database connection.
+- **The API contract is checked, not just written.** [`api/openapi.json`](api/openapi.json)
+  — 47 operations, OpenAPI 3.1 — is verified against the live chi router in
+  both directions on every test run.
 
 ---
 
