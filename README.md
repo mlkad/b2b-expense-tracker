@@ -271,6 +271,30 @@ suite rather than against my own idea of the algorithm.
 
 ---
 
+## The API contract
+
+[`api/openapi.json`](api/openapi.json) — OpenAPI 3.1, 47 operations.
+
+It is **checked against the router**, not maintained alongside it. An API
+document nobody verifies is a document describing last quarter's API, so
+`TestOpenAPIMatchesTheRouter` walks the real chi tree and compares it with the
+spec in both directions:
+
+```
+--- FAIL: TestOpenAPIMatchesTheRouter
+    these routes exist but are not in api/openapi.json:
+      post /api/v1/auth/logout
+```
+
+That is the test finding a real omission on its first run — the route is
+declared with `r.With(...)` rather than `r.Post(...)`, so it had been missed.
+
+A second test refuses operations with no summary, no tag, no `operationId`, a
+duplicate `operationId`, or no documented failure response. An operation that
+documents only its happy path tells a client nothing about what to handle.
+
+---
+
 ## Layout
 
 ```
@@ -312,7 +336,13 @@ make test               # unit, -race
 make test-integration   # spins up its own postgres
 make cover              # one coverage number, unit and integration together
 make check              # fmt, vet, test
+make openapi-validate   # the spec against the OpenAPI 3.1 schema
 ```
+
+Combined coverage over unit and integration tests: **60%**. The persistence and
+tenancy layers cannot be meaningfully exercised without a database, so a figure
+measured without the integration tag would describe a different program than the
+one that ships.
 
 ### Or containerised
 
