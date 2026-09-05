@@ -55,7 +55,7 @@ export function AccountMenu() {
         onClick={() => setOpen((was) => !was)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex items-center gap-2 rounded-lg py-1 pr-2 pl-1 transition-colors hover:bg-elevated"
+        className="flex items-center gap-2 rounded-lg py-1 pr-2 pl-1 transition-colors hover:bg-white/[0.05]"
       >
         <span
           aria-hidden="true"
@@ -73,7 +73,7 @@ export function AccountMenu() {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-40 mt-2 w-60 overflow-hidden rounded-xl border border-line bg-elevated shadow-2xl shadow-black/50"
+          className="absolute right-0 z-40 mt-2 w-60 overflow-hidden rounded-xl border border-white/10 bg-elevated shadow-2xl shadow-black/60"
         >
           <div className="border-b border-line-soft px-4 py-3">
             <p className="truncate text-sm font-medium">{name}</p>

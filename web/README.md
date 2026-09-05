@@ -18,23 +18,41 @@ slight violet cast and the brightest text stops short of `#fff`. Three surfaces
 stack — canvas, surface, elevated — and everything is a token in
 `app/index.css`; no component reaches for a hex.
 
-There is **one accent**, a light lavender, and it is used light-on-dark: a
-saturated purple fill with white text fails a contrast check at 14px, and on a
-page this dark the brightest thing on it should be the one action worth taking.
-Which is also why "Approved" is blue rather than purple — an accent that also
-means "approved" stops meaning anything.
+There is **one accent**, a light lavender, used light-on-dark: a saturated
+purple fill with white text fails a contrast check at 13px, and on a page this
+dark the brightest thing on it should be the one action worth taking. Which is
+also why "Approved" is blue rather than purple — an accent that also means
+"approved" stops meaning anything.
+
+Every panel is the same glass, defined once as a `@utility` in `app/index.css`:
+a translucent surface, a hairline *lighter* than the fill rather than darker,
+and a one-pixel highlight along the top edge. That highlight is what makes a
+dark card read as lit from above instead of as a hole cut in the page. The
+active navigation item is the same idea turned up — a violet wash, a brighter
+hairline, and a glow outside it, because colour alone is too quiet at this
+contrast.
 
 `color-scheme: dark` is set on the root. Without it the browser opens a white
 calendar out of a dark date field, which is the most obvious way a dark theme
 announces that it was applied by hand.
 
-Two things are drawn rather than downloaded. The **sidebar scenes** are a few
-SVG polygons over a gradient — four full-bleed photographs would be most of this
-application's transfer size and would need art direction at three breakpoints.
-The **tile beside each merchant** is a letter on a colour hashed from the name,
-not a favicon: fetching one means guessing a domain, handing a third party every
-merchant a user has ever claimed for, and rendering a broken square for the
-corner shop with no website.
+Two things are drawn rather than downloaded.
+
+The **sidebar scenes** are SVG — four full-bleed renders would be several times
+the weight of this whole application and would need art direction at three
+breakpoints. Three things make them read as landscape rather than as pattern,
+and all three are what a photograph of one does: ranges get lighter and flatter
+as they recede, actually blurred bands of sky sit between them as the air, and
+no two peaks share a width or an angle. They resolve to the rail's own colour at
+*both* ends, which is what makes the scene emerge from the panel instead of
+starting at a line across it.
+
+The **tile beside each merchant** carries brand colour, and a drawn mark for the
+vendors a finance team sees constantly. Not a fetched favicon: that means
+guessing a domain from a free-text merchant string, handing a third party the
+list of every vendor a tenant has claimed against, and rendering a broken square
+for the corner shop with no website. The marks are simplified deliberately — at
+twenty pixels a logo is a silhouette and a colour.
 
 ## Layout
 

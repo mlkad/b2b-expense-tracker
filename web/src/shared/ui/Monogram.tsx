@@ -1,3 +1,5 @@
+import { brandMarkFor } from "./brands";
+
 /**
  * The tile beside a merchant, a department or a person.
  *
@@ -86,8 +88,26 @@ function inkOn(hex: string): string {
 }
 
 export function Monogram({ name, className = "" }: { name: string; className?: string }) {
+  const drawn = brandMarkFor(name);
   const brand = brandFor(name);
   const letter = name.trim().charAt(0).toUpperCase() || "?";
+
+  // A drawn mark where there is one. At this size a logo is a silhouette and a
+  // colour, and the handful of vendors that carry one are recognised before
+  // their name is read - which is the whole reason the column has tiles.
+  if (drawn) {
+    return (
+      <span
+        aria-hidden="true"
+        className={`grid size-5 shrink-0 place-items-center overflow-hidden rounded ${className}`}
+        style={{ backgroundColor: drawn.background }}
+      >
+        <svg viewBox="0 0 24 24" className="size-[70%]" focusable="false">
+          {drawn.mark}
+        </svg>
+      </span>
+    );
+  }
 
   const style = brand
     ? { backgroundColor: brand, color: inkOn(brand) }

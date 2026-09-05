@@ -40,7 +40,7 @@ export function GlobalSearch() {
   return (
     <form onSubmit={onSubmit} role="search" className="hidden max-w-md flex-1 sm:block">
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
+        <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint" />
         <input
           ref={input}
           type="search"
@@ -48,13 +48,13 @@ export function GlobalSearch() {
           onChange={(e) => setTerm(e.target.value)}
           placeholder="Search anything..."
           aria-label="Search expense claims"
-          className="h-9 w-full rounded-full border border-line-soft bg-surface pr-16 pl-9 text-[13px] text-fg outline-none transition-colors placeholder:text-faint hover:border-line focus:border-accent-strong"
+          className="h-10 w-full rounded-full border border-white/[0.07] bg-white/[0.03] pr-16 pl-10 text-[13px] text-fg outline-none transition-colors placeholder:text-faint hover:border-white/15 focus:border-accent-strong"
         />
         {/* aria-hidden: it is a hint about a shortcut, and read aloud in the
             middle of a text field it is just noise. */}
         <kbd
           aria-hidden="true"
-          className="absolute top-1/2 right-3 -translate-y-1/2 rounded border border-line px-1.5 py-0.5 font-sans text-[11px] text-faint"
+          className="absolute top-1/2 right-3 -translate-y-1/2 rounded border border-white/10 bg-white/[0.03] px-1.5 py-0.5 font-sans text-[11px] text-faint"
         >
           ⌘K
         </kbd>

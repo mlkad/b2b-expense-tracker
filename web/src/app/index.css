@@ -1,55 +1,53 @@
 @import "tailwindcss";
 
-/* Inter for the interface, and a serif for the two decorative lines in the
-   sidebar. The serif is the only place a second family appears: it is there to
-   read as a voice rather than as a control, which is exactly why it must not
-   be used for anything the reader has to act on. */
+/* Inter for the interface, and a serif for the two decorative lines over the
+   sidebar artwork. The serif is the only place a second family appears: it is
+   there to read as a voice rather than as a control, which is exactly why it
+   must not be used for anything the reader has to act on. */
 @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap");
 
 /* The palette is defined once, as tokens, so a component never reaches for a
    raw hex. Tailwind 4 reads these from @theme and generates the utilities.
 
-   It is a dark theme, and a dark theme is not an inverted light one. Pure
-   black with pure white on it vibrates and is exhausting to read for an hour;
-   these greys carry a slight violet cast so the surfaces recede behind the
-   accent rather than competing with it, and the brightest text stops short of
-   #fff. */
+   Deep navy rather than neutral grey, and never pure black: black under white
+   vibrates and is exhausting to read for an hour. The whole range carries the
+   same slight blue cast so the surfaces recede behind the accent instead of
+   competing with it, and the brightest text stops short of #fff. */
 @theme {
   /* Surfaces, in the order they stack. */
-  --color-canvas: #0a0810;
-  --color-rail: #07050d;
-  --color-surface: #14111c;
-  --color-elevated: #1c1826;
-  --color-line: #272232;
-  --color-line-soft: #1e1a28;
+  --color-rail: #08090f;
+  --color-canvas: #0b0c13;
+  --color-surface: #12141d;
+  --color-elevated: #1a1c27;
+  --color-line: #262936;
+  --color-line-soft: #1c1f2a;
 
   /* Text, in the order of how much attention it is asking for. */
-  --color-fg: #edebf2;
-  --color-muted: #a39fb0;
-  --color-faint: #6e6a7d;
+  --color-fg: #f1f2f6;
+  --color-muted: #9095a6;
+  --color-faint: #626878;
 
-  /* The one accent. Light lavender on dark ink, not the other way round:
-     a saturated purple fill with white text is the first thing to fail a
-     contrast check at small sizes. */
-  --color-accent: #c9b5f7;
-  --color-accent-hover: #d8c9fa;
-  --color-accent-ink: #1d1630;
+  /* The one accent. Light lavender on dark ink, not the other way round: a
+     saturated purple fill with white text is the first thing to fail a
+     contrast check at 13px. */
+  --color-accent: #cbb9f9;
+  --color-accent-hover: #dbcefb;
+  --color-accent-ink: #1a1330;
   --color-accent-strong: #8b6fe8;
-  --color-accent-dim: #2e2650;
+  --color-accent-dim: #2a2447;
 
-  /* Status tones. Each is a background and a foreground that were chosen
-     together; using one without the other is what produces a badge nobody can
-     read. */
-  --color-tone-neutral: #26222f;
-  --color-tone-neutral-fg: #a9a4b8;
-  --color-tone-caution: #382608;
-  --color-tone-caution-fg: #e9a84c;
-  --color-tone-danger: #3a1621;
-  --color-tone-danger-fg: #ef7089;
-  --color-tone-info: #15283f;
-  --color-tone-info-fg: #6ba7ea;
-  --color-tone-positive: #0f3325;
-  --color-tone-positive-fg: #4bd98c;
+  /* Status tones. Each is a background and a foreground chosen together;
+     using one without the other is what produces a badge nobody can read. */
+  --color-tone-neutral: #272a36;
+  --color-tone-neutral-fg: #a2a8ba;
+  --color-tone-caution: #3a2b0f;
+  --color-tone-caution-fg: #e3a748;
+  --color-tone-danger: #3a1723;
+  --color-tone-danger-fg: #ec6c86;
+  --color-tone-info: #1a2c48;
+  --color-tone-info-fg: #629dda;
+  --color-tone-positive: #10331f;
+  --color-tone-positive-fg: #41ca82;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-serif: "Instrument Serif", ui-serif, Georgia, serif;
@@ -68,6 +66,38 @@ body {
   color: var(--color-fg);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Every panel is the same glass: a translucent surface, a hairline that is
+   lighter than the fill rather than darker, and a one-pixel highlight along
+   the top edge. That highlight is what makes a dark card read as lit from
+   above instead of as a hole cut in the page - and it is the difference
+   between this and a flat rectangle with a border.
+
+   Defined here rather than repeated per component so that changing the glass
+   changes every surface at once. */
+@utility glass {
+  background-color: color-mix(in oklab, var(--color-surface) 82%, transparent);
+  border: 1px solid color-mix(in oklab, white 6%, transparent);
+  box-shadow:
+    inset 0 1px 0 0 color-mix(in oklab, white 5%, transparent),
+    0 1px 2px 0 rgb(0 0 0 / 0.4);
+  backdrop-filter: blur(20px);
+}
+
+/* The active navigation item: a violet wash, a brighter hairline, and a glow
+   that sits outside it. Colour alone would be too quiet at this contrast. */
+@utility nav-active {
+  background-image: linear-gradient(
+    100deg,
+    color-mix(in oklab, var(--color-accent-strong) 26%, transparent),
+    color-mix(in oklab, var(--color-accent-strong) 12%, transparent)
+  );
+  border: 1px solid color-mix(in oklab, var(--color-accent) 22%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent-strong) 10%, transparent),
+    0 4px 18px -6px color-mix(in oklab, var(--color-accent-strong) 55%, transparent),
+    inset 0 1px 0 0 color-mix(in oklab, white 8%, transparent);
 }
 
 /* Respecting a system preference rather than overriding it. Someone who has
@@ -90,17 +120,17 @@ body {
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 
 /* The native date field's own icon is near-black on a dark input, so it has to
    be inverted to be visible at all. */
 ::-webkit-calendar-picker-indicator {
-  filter: invert(0.7);
+  filter: invert(0.65);
   cursor: pointer;
 }
 
-/* Firefox needs to be told separately; everything else follows color-scheme. */
+/* Firefox needs telling separately; everything else follows color-scheme. */
 @supports (scrollbar-color: auto) {
   * {
     scrollbar-color: var(--color-line) transparent;

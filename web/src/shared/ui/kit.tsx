@@ -16,10 +16,11 @@ type Variant = "primary" | "secondary" | "danger" | "ghost";
  * brightest thing should be the one action worth taking.
  */
 const VARIANTS: Record<Variant, string> = {
+  // The one bright thing on the page, so it carries a glow of its own.
   primary:
-    "bg-accent text-accent-ink hover:bg-accent-hover disabled:bg-elevated disabled:text-faint",
+    "bg-accent text-accent-ink shadow-[0_4px_20px_-6px_var(--color-accent-strong)] hover:bg-accent-hover disabled:bg-elevated disabled:text-faint disabled:shadow-none",
   secondary:
-    "bg-elevated text-fg border border-line hover:bg-line disabled:text-faint disabled:border-line-soft",
+    "bg-white/[0.04] text-fg border border-white/[0.08] hover:bg-white/[0.08] disabled:text-faint disabled:border-line-soft",
   danger:
     "bg-tone-danger text-tone-danger-fg border border-tone-danger-fg/25 hover:bg-tone-danger/80 disabled:text-faint",
   ghost: "text-muted hover:bg-elevated hover:text-fg disabled:text-faint",
@@ -105,14 +106,14 @@ const CARET =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a39fb0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
 const CONTROL =
-  "w-full rounded-md border bg-surface px-2.5 py-1 text-[13px] text-fg outline-none transition-colors placeholder:text-faint hover:border-line focus:border-accent-strong";
+  "w-full rounded-md border bg-black/25 px-2.5 py-1 text-[13px] text-fg outline-none transition-colors placeholder:text-faint hover:border-white/15 focus:border-accent-strong";
 
 export function TextInput({ invalid, className = "", ...rest }: InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
   return (
     <input
       aria-invalid={invalid || undefined}
       aria-describedby={invalid ? `${rest.id}-error` : rest["aria-describedby"]}
-      className={`${CONTROL} ${invalid ? "border-tone-danger-fg" : "border-line-soft"} ${className}`}
+      className={`${CONTROL} ${invalid ? "border-tone-danger-fg" : "border-white/[0.08]"} ${className}`}
       {...rest}
     />
   );
@@ -156,7 +157,7 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
 
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-line-soft bg-surface ${className}`}>{children}</div>
+    <div className={`glass rounded-xl ${className}`}>{children}</div>
   );
 }
 

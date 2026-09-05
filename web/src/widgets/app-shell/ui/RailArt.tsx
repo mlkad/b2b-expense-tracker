@@ -8,13 +8,15 @@ import type { ReactElement } from "react";
  * every navigation, and would have to be art-directed for three breakpoints. A
  * few dozen paths cost about two kilobytes and stay sharp at any density.
  *
- * Three things make it read as a landscape rather than as a pattern, and all
- * three are what a photograph of one does. Ranges get *lighter and flatter* as
- * they recede, because there is more air in front of them - so the nearest
- * silhouette is almost black and the furthest is nearly the colour of the sky.
- * Blurred bands of that sky sit between them, which is the air itself. And no
- * two peaks are the same width or angle: regular spacing is the single thing
- * that turns a mountain range into wallpaper.
+ * The thing that makes it belong to the sidebar rather than sit in it: the
+ * scene resolves to the rail's own colour at *both* ends. A dark landscape with
+ * a hard top edge reads as a photograph someone pasted in; fading into the
+ * panel above and below makes it part of the surface.
+ *
+ * And it is dark. Almost all of it is within a few percent of the rail, with a
+ * single quiet light source and rim-light on a handful of edges. A bright field
+ * of colour here would pull the eye away from the navigation, which is the only
+ * thing in this column anybody came for.
  *
  * It is decoration, so it is hidden from the accessible tree - and the line of
  * text over it is a mood, not information. Nothing here is the only place
@@ -22,32 +24,37 @@ import type { ReactElement } from "react";
  */
 export type Scene = "ridge" | "arch" | "road" | "crescent";
 
-/** Snow catching the last light over a violet valley: the expense list. */
+/** Snow catching the last light over a dark valley: the expense list. */
 function Ridge(): ReactElement {
   return (
     <>
       <rect width="240" height="360" fill="url(#sky-dawn)" />
-      <circle cx="168" cy="104" r="96" fill="url(#glow-warm)" />
+      <ellipse cx="150" cy="150" rx="118" ry="96" fill="url(#glow-warm)" />
 
-      <g fill="#7c68b4" opacity="0.34">
-        <path d="M0 228 26 200l22 16 30-38 26 30 22-14 34 36 28-20 52 46v82H0Z" />
-      </g>
-      <rect y="196" width="240" height="56" fill="url(#haze)" filter="url(#soften)" />
-
-      <g fill="#4a3a78" opacity="0.72">
-        <path d="M0 252 30 218l18 14 44-58 30 42 18-12 40 44 24-16 36 34v86H0Z" />
-      </g>
-      {/* The lit face of the main summit, on the side the glow is on. */}
-      <path d="m92 174 30 42-22 18-20-30Z" fill="#b6a3e4" opacity="0.5" />
-      <rect y="240" width="240" height="48" fill="url(#haze)" filter="url(#soften)" opacity="0.7" />
+      {/* Furthest range: barely separated from the sky it stands in. */}
+      <path
+        d="M0 232 26 206l22 14 30-34 26 26 22-12 34 32 28-18 52 42v100H0Z"
+        fill="#3b3660"
+        opacity="0.6"
+      />
+      <rect y="204" width="240" height="56" fill="url(#haze)" filter="url(#soften)" />
 
       <path
-        d="M0 286 22 262l16 12 34-46 22 30 16-10 26 32 20-14 30 26 24-16 30 30v106H0Z"
-        fill="#1c1436"
+        d="M0 256 30 224l18 12 44-54 30 38 18-10 40 40 24-14 36 30v94H0Z"
+        fill="#2a2648"
       />
-      <path d="m72 228 22 30-16 14-14-22Z" fill="#8e7cc8" opacity="0.34" />
-      <path d="M0 318 34 296l26 16 22-12 30 20 26-14 36 22 32-12 34 18v42H0Z" fill="#0e0a1c" />
-      <rect y="296" width="240" height="64" fill="url(#floor)" />
+      {/* The lit face of the main summit, on the side the glow is on. */}
+      <path d="m92 182 30 38-22 16-20-28Z" fill="#c8b6ee" opacity="0.4" />
+      <path d="m92 182 30 38" stroke="#e6dcff" strokeWidth="1.1" strokeOpacity="0.65" fill="none" />
+      <rect y="246" width="240" height="46" fill="url(#haze)" filter="url(#soften)" opacity="0.6" />
+
+      {/* Nearest range: almost the rail's own colour. */}
+      <path
+        d="M0 290 22 268l16 10 34-42 22 28 16-8 26 30 20-12 30 24 24-14 30 28v98H0Z"
+        fill="#141426"
+      />
+      <path d="m72 236 22 28" stroke="#b9a8e4" strokeWidth="1" strokeOpacity="0.4" fill="none" />
+      <path d="M0 322 34 300l26 14 22-10 30 18 26-12 36 20 32-10 34 16v42H0Z" fill="#0a0b11" />
     </>
   );
 }
@@ -57,26 +64,28 @@ function Arch(): ReactElement {
   return (
     <>
       <rect width="240" height="360" fill="url(#sky-cool)" />
-      <circle cx="120" cy="196" r="104" fill="url(#glow-cool)" />
-
-      <g fill="#6f5ea8" opacity="0.3">
-        <path d="M0 226 28 202l20 14 32-40 26 32 20-14 30 34 26-18 58 44v88H0Z" />
-      </g>
-      <rect y="200" width="240" height="52" fill="url(#haze)" filter="url(#soften)" />
-
-      <path d="M98 302V196a22 22 0 0 1 44 0v106Z" fill="url(#shaft)" />
-      <path d="M76 302V194a44 44 0 0 1 88 0v108h-22V194a22 22 0 0 0-44 0v108Z" fill="#241a46" />
-      {/* One face of the monolith takes the light, which is what stops it
-          reading as a flat cut-out. */}
-      <path d="M76 302V194a44 44 0 0 1 21-37v145Z" fill="#3a2b68" />
+      <ellipse cx="120" cy="212" rx="112" ry="112" fill="url(#glow-cool)" />
 
       <path
-        d="M0 278 26 258l18 12 30-32 24 24 18-12 28 26 22-14 34 26 40-22v82H0Z"
-        fill="#1a1230"
+        d="M0 232 28 208l20 12 32-36 26 28 20-12 30 30 26-16 58 40v104H0Z"
+        fill="#393463"
+        opacity="0.55"
       />
-      <path d="M110 360c2-30 6-44 12-56h-4c-9 14-15 28-16 56Z" fill="#cbbcf4" opacity="0.3" />
-      <path d="M0 320 40 300l30 16 28-12 32 18 30-12 40 18 40-14v34H0Z" fill="#0d0919" />
-      <rect y="300" width="240" height="60" fill="url(#floor)" />
+      <rect y="208" width="240" height="52" fill="url(#haze)" filter="url(#soften)" />
+
+      <path d="M98 304V198a22 22 0 0 1 44 0v106Z" fill="url(#shaft)" />
+      <path d="M76 304V196a44 44 0 0 1 88 0v108h-20V196a24 24 0 0 0-48 0v108Z" fill="#241f42" />
+      {/* One face of the monolith takes the light, which is what stops it
+          reading as a flat cut-out. */}
+      <path d="M76 304V196a44 44 0 0 1 20-36v144Z" fill="#332c5a" />
+      <path d="M96 160v144" stroke="#cbbcf4" strokeWidth="0.9" strokeOpacity="0.45" fill="none" />
+
+      <path
+        d="M0 282 26 262l18 10 30-30 24 22 18-10 28 24 22-12 34 24 40-20v90H0Z"
+        fill="#141227"
+      />
+      <path d="M110 360c2-28 6-42 12-54h-4c-9 14-15 26-16 54Z" fill="#cbbcf4" opacity="0.3" />
+      <path d="M0 324 40 304l30 14 28-10 32 16 30-10 40 16 40-12v42H0Z" fill="#0a0b11" />
     </>
   );
 }
@@ -86,27 +95,25 @@ function Road(): ReactElement {
   return (
     <>
       <rect width="240" height="360" fill="url(#sky-ember)" />
-      <circle cx="146" cy="156" r="96" fill="url(#glow-warm)" />
-
-      <g fill="#7a5f92" opacity="0.28">
-        <path d="M0 234 30 208l20 16 34-36 26 28 24-16 34 32 30-20 42 38v90H0Z" />
-      </g>
-      <rect y="212" width="240" height="52" fill="url(#haze)" filter="url(#soften)" />
+      <ellipse cx="140" cy="190" rx="112" ry="100" fill="url(#glow-warm)" />
 
       <path
-        d="M0 268 28 244l22 16 36-32 26 26 20-14 32 28 26-18 50 34v78H0Z"
-        fill="#251b3c"
+        d="M0 238 30 212l20 14 34-32 26 26 24-14 34 28 30-18 42 34v102H0Z"
+        fill="#3d3358"
+        opacity="0.55"
       />
+      <rect y="216" width="240" height="52" fill="url(#haze)" filter="url(#soften)" />
+
+      <path d="M0 272 28 248l22 14 36-30 26 24 20-12 32 26 26-16 50 32v92H0Z" fill="#241d38" />
 
       {/* One curve, three passes: bloom, ribbon, and the lit edge. */}
       <g strokeLinecap="round" fill="none">
-        <path d="M-18 376c58-72 132-74 160-132s-22-94 32-140" stroke="url(#ember)" strokeWidth="32" strokeOpacity="0.22" />
-        <path d="M-18 376c58-72 132-74 160-132s-22-94 32-140" stroke="url(#ember)" strokeWidth="9" />
-        <path d="M-18 376c58-72 132-74 160-132s-22-94 32-140" stroke="#ffe4d0" strokeWidth="2" strokeOpacity="0.8" />
+        <path d="M-18 376c58-72 132-74 160-132s-22-94 32-140" stroke="url(#ember)" strokeWidth="30" strokeOpacity="0.16" />
+        <path d="M-18 376c58-72 132-74 160-132s-22-94 32-140" stroke="url(#ember)" strokeWidth="7" strokeOpacity="0.75" />
+        <path d="M-18 376c58-72 132-74 160-132s-22-94 32-140" stroke="#ffdcc4" strokeWidth="1.6" strokeOpacity="0.7" />
       </g>
 
-      <path d="M0 314 38 294l30 18 30-14 34 20 30-14 40 20 38-16v52H0Z" fill="#100b1e" />
-      <rect y="296" width="240" height="64" fill="url(#floor)" />
+      <path d="M0 318 38 298l30 16 30-12 34 18 30-12 40 18 38-14v48H0Z" fill="#0a0b11" />
     </>
   );
 }
@@ -116,24 +123,27 @@ function Crescent(): ReactElement {
   return (
     <>
       <rect width="240" height="360" fill="url(#sky-night)" />
-      <circle cx="152" cy="116" r="98" fill="url(#glow-cool)" />
+      <ellipse cx="150" cy="132" rx="106" ry="96" fill="url(#glow-cool)" />
 
-      <circle cx="152" cy="116" r="42" fill="#f0eaff" fillOpacity="0.94" />
-      <circle cx="133" cy="103" r="42" fill="url(#sky-night)" />
+      {/* Small and soft, and partly hidden by the range in front of it, which
+          is what puts it in the sky rather than on top of the panel. */}
+      <circle cx="150" cy="130" r="34" fill="#ece6ff" fillOpacity="0.9" />
+      <circle cx="135" cy="120" r="34" fill="url(#sky-night)" />
 
-      <g fill="#6a58a6" opacity="0.3">
-        <path d="M0 246 28 222l22 14 30-34 28 28 20-14 34 30 28-18 50 40v92H0Z" />
-      </g>
-      <rect y="224" width="240" height="52" fill="url(#haze)" filter="url(#soften)" />
+      <path
+        d="M0 250 28 226l22 12 30-32 28 26 20-12 34 28 28-16 50 38v98H0Z"
+        fill="#3a3462"
+        opacity="0.55"
+      />
+      <rect y="228" width="240" height="50" fill="url(#haze)" filter="url(#soften)" />
 
       {/* Faceted rather than smooth: each face is its own flat tone, which is
           what reads as crystal instead of as hill. */}
-      <path d="M0 296 44 224l24 40 34-66 40 74 26-28 40 48 32-24v92H0Z" fill="#1e1638" />
-      <path d="m102 198 40 74-26 20-26-52Z" fill="#5c4c96" opacity="0.62" />
-      <path d="m44 224 24 40-22 20-20-32Z" fill="#493c7c" opacity="0.55" />
-      <path d="m182 264 32-24 26 30v30l-40-12Z" fill="#42356e" opacity="0.5" />
-      <path d="M0 326 46 304l34 18 30-16 36 20 30-14 40 18 24-10v50H0Z" fill="#0d091b" />
-      <rect y="306" width="240" height="54" fill="url(#floor)" />
+      <path d="M0 300 44 232l24 38 34-62 40 70 26-26 40 44 32-22v86H0Z" fill="#221e3c" />
+      <path d="m102 208 40 70-26 18-26-48Z" fill="#645b96" opacity="0.6" />
+      <path d="m44 232 24 38-22 18-20-30Z" fill="#514a82" opacity="0.55" />
+      <path d="m102 208 40 70" stroke="#d7cbf7" strokeWidth="1" strokeOpacity="0.45" fill="none" />
+      <path d="M0 330 46 308l34 16 30-14 36 18 30-12 40 16 24-8v46H0Z" fill="#0a0b11" />
     </>
   );
 }
@@ -158,74 +168,77 @@ export function RailArt({ scene, caption }: { scene: Scene; caption: string }) {
       >
         <defs>
           <linearGradient id="sky-dawn" x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#2d1e56" />
-            <stop offset="0.45" stopColor="#3b2662" />
-            <stop offset="1" stopColor="#150e29" />
+            <stop stopColor="#231f3d" />
+            <stop offset="0.5" stopColor="#262340" />
+            <stop offset="1" stopColor="#0a0b11" />
           </linearGradient>
           <linearGradient id="sky-cool" x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#1e1544" />
-            <stop offset="0.5" stopColor="#2b1d57" />
-            <stop offset="1" stopColor="#120c24" />
+            <stop stopColor="#1d1b3c" />
+            <stop offset="0.5" stopColor="#252143" />
+            <stop offset="1" stopColor="#0a0b11" />
           </linearGradient>
           <linearGradient id="sky-ember" x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#271946" />
-            <stop offset="0.5" stopColor="#352142" />
-            <stop offset="1" stopColor="#140d25" />
+            <stop stopColor="#261d38" />
+            <stop offset="0.5" stopColor="#2e2039" />
+            <stop offset="1" stopColor="#0a0b11" />
           </linearGradient>
           <linearGradient id="sky-night" x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#241853" />
-            <stop offset="0.5" stopColor="#2c1e5a" />
-            <stop offset="1" stopColor="#130c27" />
+            <stop stopColor="#211d40" />
+            <stop offset="0.5" stopColor="#262046" />
+            <stop offset="1" stopColor="#0a0b11" />
           </linearGradient>
 
           <radialGradient id="glow-warm">
-            <stop stopColor="#ffdcc0" stopOpacity="0.44" />
-            <stop offset="0.45" stopColor="#c9a6f0" stopOpacity="0.2" />
-            <stop offset="1" stopColor="#c9a6f0" stopOpacity="0" />
+            <stop stopColor="#ffd0ab" stopOpacity="0.45" />
+            <stop offset="0.4" stopColor="#a888e8" stopOpacity="0.22" />
+            <stop offset="1" stopColor="#a888e8" stopOpacity="0" />
           </radialGradient>
           <radialGradient id="glow-cool">
-            <stop stopColor="#e8dcff" stopOpacity="0.46" />
-            <stop offset="0.45" stopColor="#9b7ef0" stopOpacity="0.18" />
-            <stop offset="1" stopColor="#9b7ef0" stopOpacity="0" />
+            <stop stopColor="#ddd0ff" stopOpacity="0.48" />
+            <stop offset="0.4" stopColor="#8b6fe8" stopOpacity="0.2" />
+            <stop offset="1" stopColor="#8b6fe8" stopOpacity="0" />
           </radialGradient>
 
           {/* The air between the ranges, actually blurred rather than merely
               faded: a hard-edged band reads as a stripe, not as distance. */}
           <filter id="soften" x="-20%" y="-60%" width="140%" height="220%">
-            <feGaussianBlur stdDeviation="9" />
+            <feGaussianBlur stdDeviation="10" />
           </filter>
           <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#9985cf" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#9985cf" stopOpacity="0.34" />
-            <stop offset="1" stopColor="#9985cf" stopOpacity="0" />
-          </linearGradient>
-
-          {/* Every scene resolves to the sidebar colour at its foot, which is
-              what makes the caption legible without a scrim over the art. */}
-          <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#07050d" stopOpacity="0" />
-            <stop offset="0.5" stopColor="#07050d" stopOpacity="0.86" />
-            <stop offset="1" stopColor="#07050d" />
+            <stop stopColor="#8f8ac0" stopOpacity="0" />
+            <stop offset="0.5" stopColor="#8f8ac0" stopOpacity="0.2" />
+            <stop offset="1" stopColor="#8f8ac0" stopOpacity="0" />
           </linearGradient>
 
           <linearGradient id="shaft" x1="0" y1="0" x2="0" y2="1">
-            <stop stopColor="#f4ecff" stopOpacity="0.92" />
-            <stop offset="0.6" stopColor="#b79cf5" stopOpacity="0.32" />
-            <stop offset="1" stopColor="#8b6fe8" stopOpacity="0.04" />
+            <stop stopColor="#efe8ff" stopOpacity="0.8" />
+            <stop offset="0.6" stopColor="#a98ff0" stopOpacity="0.22" />
+            <stop offset="1" stopColor="#8b6fe8" stopOpacity="0.02" />
           </linearGradient>
           <linearGradient id="ember" x1="0" y1="1" x2="1" y2="0">
-            <stop stopColor="#ff9a63" stopOpacity="0.95" />
-            <stop offset="0.6" stopColor="#c98ae0" stopOpacity="0.48" />
-            <stop offset="1" stopColor="#8b6fe8" stopOpacity="0.08" />
+            <stop stopColor="#ff9159" stopOpacity="0.9" />
+            <stop offset="0.6" stopColor="#c07ede" stopOpacity="0.4" />
+            <stop offset="1" stopColor="#8b6fe8" stopOpacity="0.05" />
           </linearGradient>
         </defs>
         <Painting />
       </svg>
 
+      {/* The seam, removed at both ends: the scene has to emerge from the
+          panel rather than start at a line across it. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-20 bg-gradient-to-b from-rail to-transparent"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-32 bg-gradient-to-t from-rail via-rail/80 to-transparent"
+      />
+
       <p className="absolute right-5 bottom-9 left-5 font-serif text-[21px] leading-[1.14] text-fg">
         {caption}
       </p>
-      <span aria-hidden="true" className="absolute bottom-5 left-5 h-px w-8 bg-fg/35" />
+      <span aria-hidden="true" className="absolute bottom-5 left-5 h-px w-8 bg-fg/30" />
     </div>
   );
 }
