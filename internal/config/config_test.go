@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,8 +19,43 @@ func valid() map[string]string {
 	}
 }
 
+// Every variable Load reads. Listed rather than discovered, because the test
+// has to clear the ones it is *not* setting.
+var known = []string{
+	"APP_ENV", "APP_VERSION", "BILLING_GATEWAY_URL", "BILLING_RELAY_SECRET",
+	"BILLING_SERVICE_SECRET", "CORS_ALLOWED_ORIGINS", "DASHBOARD_URL", "DATABASE_URL",
+	"DB_IDLE_IN_TX_TIMEOUT", "DB_MAX_CONNS", "DB_MIN_CONNS", "DB_SLOW_QUERY_THRESHOLD",
+	"DB_STATEMENT_TIMEOUT", "DB_VERIFY_TENANT_RESET", "HTTP_ADDR", "HTTP_API_TIMEOUT",
+	"HTTP_EXPORT_TIMEOUT", "HTTP_IDLE_TIMEOUT", "HTTP_READ_TIMEOUT", "HTTP_RELAY_TIMEOUT",
+	"HTTP_SHUTDOWN_GRACE", "HTTP_WRITE_TIMEOUT", "JWT_AUDIENCE", "JWT_ISSUER", "JWT_SECRET",
+	"JWT_TTL", "LOG_FORMAT", "LOG_LEVEL", "REDIS_ADDR", "REDIS_DB", "REDIS_PASSWORD",
+	"REFRESH_TTL", "SECURE_COOKIES", "SMTP_FROM_ADDRESS", "SMTP_FROM_NAME", "SMTP_HOST",
+	"SMTP_PASSWORD", "SMTP_PORT", "SMTP_TLS", "SMTP_USERNAME", "STORAGE_ACCESS_KEY",
+	"STORAGE_BUCKET", "STORAGE_DOWNLOAD_TTL", "STORAGE_ENDPOINT", "STORAGE_PATH_STYLE",
+	"STORAGE_PUBLIC_ENDPOINT", "STORAGE_REGION", "STORAGE_SECRET_KEY", "STORAGE_UPLOAD_TTL",
+	"TRUSTED_PROXY_HOPS",
+}
+
+// load runs Load against exactly the environment it is given, and nothing else.
+//
+// Clearing the rest is the whole point. These tests assert on what is *absent* -
+// that a missing DATABASE_URL is reported, that production refuses an empty
+// CORS_ALLOWED_ORIGINS - and a developer who has sourced .env to run the
+// application, which is what the Makefile tells them to do, has all of those
+// exported. The suite then fails on their machine and passes in CI, which is
+// the worst way round for a test to be wrong.
 func load(t *testing.T, env map[string]string) (*Config, error) {
 	t.Helper()
+
+	// t.Setenv, not os.Unsetenv: it restores the previous value on cleanup and
+	// refuses to run in a parallel test, which is exactly the safety wanted
+	// around process-global state.
+	for _, key := range known {
+		if _, set := env[key]; !set {
+			t.Setenv(key, "")
+			os.Unsetenv(key)
+		}
+	}
 	for k, v := range env {
 		t.Setenv(k, v)
 	}
