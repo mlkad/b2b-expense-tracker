@@ -52,6 +52,13 @@ migrate-down: ## Roll back one migration
 migrate-status: ## Show which migrations are applied
 	GOOSE_DBSTRING="$(DEV_DSN)" $(GOBIN)/goose status
 
+.PHONY: seed
+seed: ## Fill the local database with a demo organisation
+	# The owner connection, not the runtime role: seeding writes across every
+	# tenant table before there is a tenant to bind a session to, which is
+	# exactly what row-level security exists to prevent.
+	SEED_DATABASE_URL="$(DEV_DSN)" go run ./cmd/seed
+
 .PHONY: migrate-new
 migrate-new: ## Create a migration: make migrate-new name=add_widgets
 	@test -n "$(name)" || (echo "usage: make migrate-new name=add_widgets" && exit 1)
@@ -98,13 +105,29 @@ test-integration: ## Integration tests against a throwaway PostgreSQL container
 .PHONY: test-all
 test-all: test test-integration ## Everything
 
+# COVERPKG is every package that carries logic. cmd is excluded because it is
+# process wiring, and the generated query layer because measuring it would
+# report the coverage of sqlc's code generator rather than of this project.
+COVERPKG := ./internal/domain/...,./internal/export/...,./internal/service/...,\
+./internal/gateway/...,./internal/auth/...,./internal/repository/postgres,\
+./internal/platform/...,./internal/config/...,./internal/transport/...,./internal/worker/...
+
 .PHONY: cover
-cover: ## Coverage report over the packages that carry logic
-	go test -race -count=1 -coverprofile=coverage.out \
-		-coverpkg=./internal/domain/...,./internal/export/...,./internal/service/...,./internal/gateway/... \
-		./...
+cover: ## One coverage number over unit and integration tests together
+	# The integration tag is included on purpose. The persistence and tenancy
+	# layers cannot be meaningfully exercised without a database, so a number
+	# measured without them describes a different program than the one that
+	# ships.
+	go test -tags integration -count=1 -timeout 20m \
+		-coverpkg=$(COVERPKG) -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@go tool cover -func=coverage.out | tail -1
+
+.PHONY: cover-gaps
+cover-gaps: ## List functions with no coverage at all
+	@go test -tags integration -count=1 -timeout 20m \
+		-coverpkg=$(COVERPKG) -coverprofile=coverage.out ./... >/dev/null
+	@go tool cover -func=coverage.out | awk '$$3 == "0.0%"' | sed 's#github.com/mlkad/b2b-expense-tracker/##' 
 
 # -----------------------------------------------------------------------------
 # Quality
@@ -126,6 +149,60 @@ tidy: ## Tidy and verify the module
 
 .PHONY: check
 check: fmt vet test ## Format, vet and unit test - what CI runs first
+
+.PHONY: openapi-validate
+openapi-validate: ## Validate api/openapi.json with an independent validator
+	# TestOpenAPIMatchesTheRouter already checks the document against the real
+	# chi tree, which is the property that matters. This checks it against the
+	# 3.1 schema itself, which that test cannot.
+	@python3 -c "from openapi_spec_validator import validate; \
+		from openapi_spec_validator.readers import read_from_filename; \
+		spec, _ = read_from_filename('api/openapi.json'); validate(spec); \
+		print('api/openapi.json is a valid OpenAPI 3.1 document')" \
+	  || echo "install the validator first: pip3 install openapi-spec-validator"
+
+# -----------------------------------------------------------------------------
+# Dashboard
+# -----------------------------------------------------------------------------
+
+.PHONY: web-install
+web-install: ## Install the dashboard's dependencies
+	cd web && npm ci || (cd web && npm install)
+
+.PHONY: web
+web: ## Run the dashboard against the local API
+	cd web && npm run dev
+
+.PHONY: web-check
+web-check: ## Typecheck, lint and unit test the dashboard
+	cd web && npm run check
+
+.PHONY: web-smoke
+web-smoke: ## Drive the running dashboard with a real browser
+	# Needs `make run` and `make web` in other shells. The unit tests stub
+	# fetch, which proves the client's logic and nothing about whether the
+	# thing works.
+	cd web && npm run smoke -- http://localhost:5173 ./screenshots
+
+# -----------------------------------------------------------------------------
+# Containers
+# -----------------------------------------------------------------------------
+
+.PHONY: images
+images: ## Build the api, worker and migrate images
+	docker build --target api     --build-arg VERSION=$(VERSION) -t expense-api:$(VERSION)     .
+	docker build --target worker  --build-arg VERSION=$(VERSION) -t expense-worker:$(VERSION)  .
+	docker build --target migrate --build-arg VERSION=$(VERSION) -t expense-migrate:$(VERSION) .
+	@docker images --format '  {{.Repository}}:{{.Tag}}\t{{.Size}}' | grep '^  expense-'
+
+.PHONY: stack
+stack: ## Run the whole service in containers against the local dependencies
+	docker compose -f docker-compose.yml -f docker-compose.stack.yml up -d --build
+	@docker compose -f docker-compose.yml -f docker-compose.stack.yml ps
+
+.PHONY: stack-down
+stack-down: ## Stop the containerised service, leaving the dependencies running
+	docker compose -f docker-compose.yml -f docker-compose.stack.yml down
 
 .PHONY: tools
 tools: ## Install the pinned developer tools

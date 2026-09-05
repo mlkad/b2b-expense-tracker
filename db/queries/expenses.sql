@@ -21,6 +21,33 @@ INSERT INTO expenses (
 )
 RETURNING *;
 
+-- CreateRecurringExpense is the sweep's insert, and it differs from
+-- CreateExpense in one way that matters: a duplicate is not an error.
+--
+-- The sweep re-reads a subscription whose claim already exists whenever a
+-- previous run was interrupted after the insert and before the date advanced.
+-- Letting the unique index raise there aborts the transaction, so the advance
+-- that would stop it happening again cannot run - and the subscription is
+-- retried every day, failing every day. ON CONFLICT DO NOTHING returns no row
+-- instead, which the caller reads as "already done" and carries on.
+--
+-- The conflict target repeats the partial index's predicate, because a partial
+-- unique index is only inferred when the WHERE clause matches.
+-- name: CreateRecurringExpense :one
+INSERT INTO expenses (
+    id, tenant_id, submitter_id, department_id, status, category,
+    amount_minor, currency, merchant, description, spent_at,
+    revision, version, source_subscription_id, created_at, updated_at
+) VALUES (
+    @id, @tenant_id, @submitter_id, @department_id, @status, @category,
+    @amount_minor, @currency, @merchant, @description, @spent_at,
+    @revision, @version, @source_subscription_id, @created_at, @updated_at
+)
+ON CONFLICT (tenant_id, source_subscription_id, spent_at)
+    WHERE source_subscription_id IS NOT NULL
+    DO NOTHING
+RETURNING *;
+
 -- name: GetExpense :one
 SELECT * FROM expenses
 WHERE tenant_id = @tenant_id AND id = @id;
@@ -209,3 +236,28 @@ RETURNING *;
 SELECT * FROM expense_attachments
 WHERE tenant_id = @tenant_id AND expense_id = @expense_id
 ORDER BY created_at ASC;
+
+-- SpendByStatus and SpendByDepartment back the dashboard's summary strip.
+--
+-- Both are aggregates over the same rows the list endpoint pages through, so
+-- they are answered from expenses_budget_rollup_idx rather than by counting
+-- what the client already has - a dashboard that summed its first page would
+-- report the wrong total on every tenant with more than one page.
+
+-- name: GetExpenseAttachment :one
+SELECT a.*, e.status AS expense_status, e.submitter_id AS expense_submitter_id,
+       e.department_id AS expense_department_id
+  FROM expense_attachments a
+  JOIN expenses e ON e.id = a.expense_id AND e.tenant_id = a.tenant_id
+ WHERE a.tenant_id = @tenant_id AND a.id = @id;
+
+-- The RLS policy expense_attachments_delete_drafts_only refuses this for any
+-- claim that is no longer a draft, so the predicate is not repeated here: the
+-- policy is the guarantee and duplicating it would invite the two to drift.
+-- name: DeleteExpenseAttachment :execrows
+DELETE FROM expense_attachments
+WHERE tenant_id = @tenant_id AND id = @id;
+
+-- name: CountExpenseAttachments :one
+SELECT count(*) FROM expense_attachments
+WHERE tenant_id = @tenant_id AND expense_id = @expense_id;

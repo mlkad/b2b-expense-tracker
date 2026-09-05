@@ -1,0 +1,103 @@
+# The whole service, containerised, against the same PostgreSQL and Redis that
+# docker-compose.yml starts for local development.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.stack.yml up --build
+#
+# It exists to prove the images actually run - a Dockerfile that builds is not
+# the same as a Dockerfile that boots - and to give the dashboard something to
+# point at without a Go toolchain installed.
+services:
+  migrate:
+    build:
+      context: .
+      target: migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # The owner, not the runtime role. Migrations create tables and policies;
+      # expense_app is granted DML only and would be refused.
+      MIGRATE_DATABASE_URL: postgres://expense:local_dev_pw@postgres:5432/expenses?sslmode=disable
+    command: ["up"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      target: api
+      args:
+        VERSION: local
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      APP_ENV: development
+      LOG_FORMAT: text
+      LOG_LEVEL: debug
+      HTTP_ADDR: ":8080"
+      CORS_ALLOWED_ORIGINS: http://localhost:5173
+      SECURE_COOKIES: "false"
+      # The runtime role. postgres.Open refuses to start if this one can see
+      # through row-level security, so a copy-paste of the owner's DSN here
+      # fails loudly at boot rather than quietly sharing data between tenants.
+      DATABASE_URL: postgres://expense_app:local_app_pw@postgres:5432/expenses?sslmode=disable
+      DB_VERIFY_TENANT_RESET: "true"
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: local-development-secret-at-least-32-bytes
+      STORAGE_ENDPOINT: http://minio:9000
+      # Where a browser reaches the store. The API talks to the container name;
+      # a browser cannot resolve it, and the host is part of the signature - so
+      # a presigned URL has to be signed for the address the client will use.
+      STORAGE_PUBLIC_ENDPOINT: http://127.0.0.1:9010
+      STORAGE_BUCKET: receipts
+      STORAGE_ACCESS_KEY: local_storage_key
+      STORAGE_SECRET_KEY: local_storage_secret
+      STORAGE_PATH_STYLE: "true"
+    healthcheck:
+      # scratch has no shell and no curl, so the usual CMD-SHELL probe cannot
+      # work. The binary answers its own probe instead.
+      test: ["CMD", "/api", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      target: worker
+      args:
+        VERSION: local
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      LOG_FORMAT: text
+      LOG_LEVEL: debug
+      DATABASE_URL: postgres://expense_app:local_app_pw@postgres:5432/expenses?sslmode=disable
+      DB_VERIFY_TENANT_RESET: "true"
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: local-development-secret-at-least-32-bytes
+      # The worker is what sends mail, so this belongs here and not on the API.
+      # Without it the worker starts, logs "no mail relay configured", and every
+      # notification is silently dropped - which is the failure this stack had.
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_TLS: none
+      SMTP_FROM_ADDRESS: noreply@localhost
+      SMTP_FROM_NAME: "Expense Tracker"
+      # Read at http://localhost:8026 - Mailpit catches everything and delivers
+      # nothing, which is the point: a development database full of real
+      # addresses would otherwise send real people real mail.
+      DASHBOARD_URL: http://localhost:5173
+    restart: unless-stopped
