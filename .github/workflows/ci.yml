@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a pull request cancels the first run: there is no value in
+# finishing a build of code that has already been replaced.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned to a patch release, not a minor line. The stdlib is a dependency
+  # like any other, and "1.26" would float onto whichever patch the runner
+  # happens to cache - which is how a green pipeline silently starts building
+  # against a toolchain with known CVEs. govulncheck below is the check that
+  # catches it, and this is the line that fixes it.
+  GO_VERSION: "1.26.6"
+
+jobs:
+  build:
+    name: Build, vet and unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Verify the module is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Verify formatting
+        run: |
+          unformatted=$(gofmt -l -s .)
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt -s clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: |
+          go vet ./...
+          go vet -tags integration ./...
+
+      - name: Unit tests
+        # -race is not optional here. The state machine and the export
+        # encoders are used concurrently across requests, and a data race that
+        # only shows up under load is the class of bug this catches cheaply.
+        run: go test -race -count=1 ./...
+
+  sqlc:
+    name: Generated query layer is current
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+
+      # A checked-in generated file that no longer matches its source is a
+      # file that compiles against a schema the database stopped having.
+      - name: Regenerate and diff
+        run: |
+          sqlc generate
+          git diff --exit-code internal/repository/postgres/gen
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # testcontainers starts and disposes of the database itself, so there is
+      # no service container here and no schema to keep in step with the
+      # migrations.
+      - name: Integration tests
+        run: go test -tags integration -race -count=1 -timeout 20m ./test/integration/
+
+  security:
+    name: Vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
