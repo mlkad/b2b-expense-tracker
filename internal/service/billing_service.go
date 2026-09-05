@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -181,6 +182,65 @@ func (s *BillingService) IngestRelayedEvent(ctx context.Context, event *gateway.
 		return "", err
 	}
 
+	return s.applyAndSettle(ctx, event)
+}
+
+// MaxRelayAttempts bounds how many times the sweeper will retry one delivery.
+//
+// A delivery that has failed this many times is failing for a reason that will
+// not resolve itself - a payload this build cannot handle, or a tenant row that
+// has gone. Retrying it forever keeps a row in 'processing', which is
+// indistinguishable from a genuinely stuck one and hides the next real
+// failure behind it.
+const MaxRelayAttempts = 5
+
+// ReapplyStuck reprocesses a delivery the sweeper reclaimed.
+//
+// The event was claimed and never settled, which means the process handling it
+// died between those two steps. The claim is the idempotency gate, so the
+// gateway's redelivery of the same event is discarded as a duplicate - without
+// this path, one crash at the wrong moment drops a subscription change
+// permanently.
+//
+// It deliberately does not claim: the row already exists, and claiming again
+// would report a duplicate and do nothing.
+func (s *BillingService) ReapplyStuck(ctx context.Context, delivery repo.StuckDelivery) (RelayOutcome, error) {
+	if delivery.Attempts > MaxRelayAttempts {
+		permanent := fmt.Errorf("abandoned after %d attempts", delivery.Attempts)
+		s.log.ErrorContext(ctx, "giving up on a billing delivery",
+			slog.String("event_id", delivery.EventID),
+			slog.String("type", delivery.EventType),
+			slog.Int("attempts", int(delivery.Attempts)))
+
+		if err := s.billing.SettleDelivery(ctx, s.scope.DB(), delivery.EventID, nil,
+			gen.BillingEventStatusFailed, permanent); err != nil {
+			return "", err
+		}
+		return RelaySkipped, nil
+	}
+
+	// The stored payload is the raw body the signature was verified over, so
+	// re-decoding it cannot smuggle in anything that was not authenticated the
+	// first time.
+	var event gateway.Event
+	if err := json.Unmarshal(delivery.Payload, &event); err != nil {
+		settleErr := s.billing.SettleDelivery(ctx, s.scope.DB(), delivery.EventID, nil,
+			gen.BillingEventStatusFailed, fmt.Errorf("stored payload is unreadable: %w", err))
+		if settleErr != nil {
+			return "", settleErr
+		}
+		return RelaySkipped, nil
+	}
+
+	return s.applyAndSettle(ctx, &event)
+}
+
+// applyAndSettle runs the event and records the outcome in the ledger. Shared
+// by the receiver and the sweeper so both settle identically - a second copy
+// of this would eventually disagree about which outcomes count as success.
+func (s *BillingService) applyAndSettle(ctx context.Context, event *gateway.Event) (RelayOutcome, error) {
+	db := s.scope.DB()
+
 	outcome, err := s.applyEvent(ctx, event)
 
 	status := gen.BillingEventStatusSucceeded
@@ -196,7 +256,7 @@ func (s *BillingService) IngestRelayedEvent(ctx context.Context, event *gateway.
 		tenantID = &id
 	}
 
-	// Settling uses a context detached from the request's cancellation. If the
+	// Settling uses a context detached from the caller's cancellation. If the
 	// gateway hangs up after the projection was written, the ledger row must
 	// still leave 'processing' - otherwise the sweeper reclaims an event that
 	// was in fact applied, and applies it twice.
@@ -209,6 +269,19 @@ func (s *BillingService) IngestRelayedEvent(ctx context.Context, event *gateway.
 	}
 
 	return outcome, err
+}
+
+// ReclaimStuckDeliveries hands the sweeper the deliveries that were claimed
+// and never settled. The repository does the claiming; this exists so the
+// worker depends on the service rather than reaching past it into persistence.
+func (s *BillingService) ReclaimStuckDeliveries(ctx context.Context, staleAfter time.Duration, batch int32) ([]repo.StuckDelivery, error) {
+	return s.billing.ReclaimStuck(ctx, s.scope.DB(), staleAfter, batch)
+}
+
+// TenantsToReconcile lists the tenants the nightly sweep should check against
+// the gateway.
+func (s *BillingService) TenantsToReconcile(ctx context.Context) (map[uuid.UUID]string, error) {
+	return s.billing.TenantsWithBilling(ctx, s.scope.DB())
 }
 
 func (s *BillingService) applyEvent(ctx context.Context, event *gateway.Event) (RelayOutcome, error) {

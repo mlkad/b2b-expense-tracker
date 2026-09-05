@@ -30,20 +30,30 @@ type Handlers struct {
 	db       *postgres.DB
 	expenses *repo.ExpenseRepository
 	budgets  *repo.BudgetRepository
+	tenancy  *repo.TenancyRepository
 	billing  *service.BillingService
 	notifier Notifier
 	log      *slog.Logger
+
+	// queue lets a sweep fan out into per-item jobs. Nil disables the fan-out
+	// sweeps, which is what a test wiring only the direct handlers wants.
+	queue *Client
 }
 
 func NewHandlers(
 	db *postgres.DB,
 	expenses *repo.ExpenseRepository,
 	budgets *repo.BudgetRepository,
+	tenancy *repo.TenancyRepository,
 	billing *service.BillingService,
+	queue *Client,
 	notifier Notifier,
 	log *slog.Logger,
 ) *Handlers {
-	return &Handlers{db: db, expenses: expenses, budgets: budgets, billing: billing, notifier: notifier, log: log}
+	return &Handlers{
+		db: db, expenses: expenses, budgets: budgets, tenancy: tenancy,
+		billing: billing, queue: queue, notifier: notifier, log: log,
+	}
 }
 
 // Register wires the task types to their handlers.
@@ -52,6 +62,9 @@ func (h *Handlers) Register(mux *asynq.ServeMux) {
 	mux.HandleFunc(TaskBudgetThreshold, h.HandleBudgetThreshold)
 	mux.HandleFunc(TaskBillingReconcile, h.HandleBillingReconcile)
 	mux.HandleFunc(TaskRecurringSweep, h.HandleRecurringSweep)
+	mux.HandleFunc(TaskBillingReconcileSweep, h.HandleBillingReconcileSweep)
+	mux.HandleFunc(TaskRelaySweep, h.HandleRelaySweep)
+	mux.HandleFunc(TaskSessionCleanup, h.HandleSessionCleanup)
 }
 
 // HandleExpenseTransition notifies whoever needs to know about a decision.
@@ -240,4 +253,130 @@ func sameDepartment(a, b *uuid.UUID) bool {
 		return a == nil && b == nil
 	}
 	return *a == *b
+}
+
+// -----------------------------------------------------------------------------
+// Periodic maintenance
+// -----------------------------------------------------------------------------
+
+// HandleBillingReconcileSweep enqueues one reconciliation per tenant.
+//
+// The relay is at-least-once but not guaranteed: a delivery that arrived during
+// a deployment window, or one that failed every retry, leaves the local
+// projection behind. Nothing on the request path notices, because the
+// entitlement read is local and looks perfectly healthy - so the only way that
+// error is ever found is by asking the gateway.
+//
+// The fan-out is per tenant rather than a loop inside this job so a single
+// tenant whose gateway call fails is retried on its own, instead of aborting
+// the sweep and leaving every tenant after it in the list unchecked.
+func (h *Handlers) HandleBillingReconcileSweep(ctx context.Context, _ *asynq.Task) error {
+	if h.queue == nil {
+		h.log.WarnContext(ctx, "reconciliation sweep has no queue configured; skipping")
+		return nil
+	}
+
+	tenants, err := h.billing.TenantsToReconcile(ctx)
+	if err != nil {
+		return err
+	}
+
+	var failed int
+	for tenantID, customerRef := range tenants {
+		if err := h.queue.EnqueueReconcile(ctx, tenantID, customerRef); err != nil {
+			// One tenant that cannot be enqueued must not stop the rest. The
+			// sweep runs again tomorrow, and the count below is what makes a
+			// persistent problem visible.
+			failed++
+			h.log.ErrorContext(ctx, "could not enqueue reconciliation",
+				slog.String("tenant_id", tenantID.String()),
+				slog.String("error", err.Error()))
+		}
+	}
+
+	h.log.InfoContext(ctx, "billing reconciliation fanned out",
+		slog.Int("tenants", len(tenants)),
+		slog.Int("failed_to_enqueue", failed))
+	return nil
+}
+
+// RelayStaleAfter is how long a delivery may sit in 'processing' before the
+// sweeper treats it as abandoned.
+//
+// It has to exceed the relay route's own timeout, or the sweeper reclaims
+// deliveries that are still being handled and applies them twice. The route
+// allows 25 seconds; five minutes leaves room for a slow gateway call inside
+// the handler without ever overlapping.
+const (
+	RelayStaleAfter = 5 * time.Minute
+	RelaySweepBatch = 50
+)
+
+// HandleRelaySweep reprocesses deliveries that were claimed and never settled.
+//
+// The receiver claims an event id before processing it, because claiming after
+// verification is what stops a forged id from getting a genuine delivery
+// discarded. The cost of that ordering is this failure mode: a process that
+// dies between the claim and the settle leaves a row that no redelivery can
+// get past, since the gateway's retry now looks like a duplicate.
+//
+// Without this sweep, one crash at the wrong moment drops a subscription
+// change permanently, and nothing surfaces it - the tenant simply keeps the
+// plan they had.
+func (h *Handlers) HandleRelaySweep(ctx context.Context, _ *asynq.Task) error {
+	stuck, err := h.billing.ReclaimStuckDeliveries(ctx, RelayStaleAfter, RelaySweepBatch)
+	if err != nil {
+		return err
+	}
+	if len(stuck) == 0 {
+		return nil
+	}
+
+	h.log.WarnContext(ctx, "reclaiming billing deliveries that were never settled",
+		slog.Int("count", len(stuck)))
+
+	var applied, abandoned int
+	for _, delivery := range stuck {
+		outcome, err := h.billing.ReapplyStuck(ctx, delivery)
+		switch {
+		case err != nil:
+			// Left in 'processing' with attempts bumped, so the next sweep
+			// picks it up and eventually gives up on it.
+			h.log.ErrorContext(ctx, "reclaimed delivery failed again",
+				slog.String("event_id", delivery.EventID),
+				slog.Int("attempts", int(delivery.Attempts)),
+				slog.String("error", err.Error()))
+		case outcome == service.RelayApplied:
+			applied++
+		default:
+			abandoned++
+		}
+	}
+
+	h.log.InfoContext(ctx, "relay sweep complete",
+		slog.Int("applied", applied), slog.Int("skipped_or_abandoned", abandoned))
+	return nil
+}
+
+// RefreshTokenGrace is how long an expired refresh token is kept.
+//
+// It is not zero on purpose: after a suspected session theft, an investigation
+// needs to see whether a token was revoked or merely expired, and a row that
+// has already been deleted answers neither question.
+const RefreshTokenGrace = 30 * 24 * time.Hour
+
+// HandleSessionCleanup removes long-expired refresh tokens.
+//
+// Every login writes a row here and, until this ran, nothing ever removed one -
+// so the table and the index behind the rotation lookup grew in proportion to
+// the product's entire history of sign-ins rather than to its live sessions.
+func (h *Handlers) HandleSessionCleanup(ctx context.Context, _ *asynq.Task) error {
+	deleted, err := h.tenancy.PurgeExpiredRefreshTokens(ctx, h.db, RefreshTokenGrace)
+	if err != nil {
+		return err
+	}
+	if deleted > 0 {
+		h.log.InfoContext(ctx, "purged expired refresh tokens", slog.Int64("deleted", deleted))
+	}
+	return nil
 }
