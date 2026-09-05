@@ -160,27 +160,25 @@ await page.screenshot({ path: `${out}/07-created.png`, fullPage: true });
 // browser, the API only signs a URL. Which means this is the only place the
 // whole path can be checked.
 
-await page.getByRole("link", { name: "Expenses", exact: true }).click();
-await page.locator("tbody tr a").first().waitFor({ timeout: 10000 });
+// The claim created above, which is a draft and belongs to this user - both
+// of which the Attach control requires.
+//
+// Picking the first row marked Draft out of the table is what this used to do,
+// and it broke as soon as the recurring sweep started working: the newest draft
+// is now often one it generated for somebody else, and a claim that is not
+// yours has no Attach button. A test that chooses its own subject does not care
+// what else is in the table.
+await page.getByRole("heading", { name: "Receipts" }).waitFor({ timeout: 10000 });
 
-// A draft, so a receipt can be attached to it.
-const draftRow = page.locator("tbody tr", { hasText: "Draft" }).first();
-if ((await draftRow.count()) > 0) {
-  await draftRow.locator("a").click();
-  await page.getByRole("heading", { name: "Receipts" }).waitFor({ timeout: 10000 });
+await page.setInputFiles("#receipt-input", {
+  name: "receipt.pdf",
+  mimeType: "application/pdf",
+  buffer: Buffer.from("%PDF-1.7\nsmoke test receipt\n"),
+});
 
-  await page.setInputFiles("#receipt-input", {
-    name: "receipt.pdf",
-    mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.7\nsmoke test receipt\n"),
-  });
-
-  await page.getByRole("link", { name: "receipt.pdf" }).waitFor({ timeout: 20000 });
-  check(true, "a receipt was hashed, uploaded to object storage and recorded");
-  await page.screenshot({ path: `${out}/08-receipt.png`, fullPage: true });
-} else {
-  check(false, "no draft claim available to attach a receipt to");
-}
+await page.getByRole("link", { name: "receipt.pdf" }).waitFor({ timeout: 20000 });
+check(true, "a receipt was hashed, uploaded to object storage and recorded");
+await page.screenshot({ path: `${out}/08-receipt.png`, fullPage: true });
 
 // --- One claim --------------------------------------------------------------
 

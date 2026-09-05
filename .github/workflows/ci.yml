@@ -131,7 +131,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Lint
+      # Also runs scripts/layers.mjs, which enforces the Feature-Sliced import
+      # rules. A layering convention nothing checks is a convention for about a
+      # month.
+      - name: Lint and layer boundaries
         run: npm run lint
 
       - name: Unit tests
