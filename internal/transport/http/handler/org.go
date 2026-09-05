@@ -413,7 +413,41 @@ func (h *OrgHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": members})
+	items := make([]memberEntry, len(members))
+	for i, m := range members {
+		items[i] = memberEntry{
+			ID:                 m.ID,
+			UserID:             m.UserID,
+			Email:              m.Email,
+			FullName:           m.FullName,
+			Role:               string(m.Role),
+			Status:             string(m.Status),
+			DepartmentID:       m.DepartmentID,
+			DepartmentName:     m.DepartmentName,
+			ApprovalLimitMinor: m.ApprovalLimitMinor,
+			CreatedAt:          m.CreatedAt,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// memberEntry is the wire shape of a membership with its user resolved.
+//
+// The repository type embeds tenant.Membership, whose fields carry JSON tags,
+// alongside fields that do not - so serialising it directly produced an object
+// with both `id` and `Email` in it. One convention per payload is the whole
+// point of a DTO.
+type memberEntry struct {
+	ID                 uuid.UUID  `json:"id"`
+	UserID             uuid.UUID  `json:"user_id"`
+	Email              string     `json:"email"`
+	FullName           *string    `json:"full_name,omitempty"`
+	Role               string     `json:"role"`
+	Status             string     `json:"status"`
+	DepartmentID       *uuid.UUID `json:"department_id,omitempty"`
+	DepartmentName     *string    `json:"department_name,omitempty"`
+	ApprovalLimitMinor *int64     `json:"approval_limit_minor,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type inviteRequest struct {

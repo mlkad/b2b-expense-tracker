@@ -403,9 +403,15 @@ offering a control the data model cannot support is how a list ends up slow for
 everybody. Going back is a stack of visited cursors — there is no way to compute
 the previous page's cursor from the current one.
 
-Sign-in, the shell, the overview, the expense list with filters and export, the
-claim detail with its audit ledger, the create and edit forms, and the approver
-queue. Budgets, departments, members and receipt uploads are next.
+Receipts are uploaded straight to object storage: the browser computes the
+SHA-256, the API signs a URL, and the store verifies the digest itself — a
+mismatch is refused with `XAmzContentChecksumMismatch`, which is a stronger
+guarantee than an API that never sees the file could make.
+
+The smoke script has now found three things the unit tests could not: a session
+that did not survive a reload, `networkidle` being meaningless after a SPA
+navigation, and the API mixing `snake_case` with `PascalCase` in one object
+because handlers were returning repository structs directly. All three are fixed.
 
 More in [web/README.md](web/README.md).
 

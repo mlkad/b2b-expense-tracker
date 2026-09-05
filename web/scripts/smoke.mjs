@@ -18,6 +18,10 @@ import { chromium } from "playwright";
 const base = process.argv[2] ?? "http://localhost:5173";
 const out = process.argv[3] ?? "./screenshots";
 
+// The organisation this signs in as needs a paid plan: department budgets are
+// not part of the free tier, and the entitlement gate is exercised by the Go
+// integration tests rather than duplicated here.
+
 const email = process.env.SMOKE_EMAIL ?? "ada@acme.test";
 const password = process.env.SMOKE_PASSWORD ?? "correct-horse-battery";
 
@@ -27,12 +31,20 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 const problems = [];
 page.on("pageerror", (e) => problems.push(`uncaught: ${e.message}`));
 page.on("requestfailed", (r) => problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`));
+/**
+ * Responses this script provokes on purpose.
+ *
+ * The bootstrap refresh on a first visit is a 401 by design - there is no
+ * session to recover yet. The overlapping budget is a 422 the test exists to
+ * see. Flagging either would make the script fail on a check that passed.
+ */
+let expectingFailure = null;
+
 page.on("response", (r) => {
-  // The bootstrap refresh on a first visit is a 401 by design - there is no
-  // session to recover yet - so it is not a problem. Anything else is.
-  if (r.status() >= 400 && !r.url().endsWith("/auth/refresh")) {
-    problems.push(`${r.status()} ${r.request().method()} ${r.url()}`);
-  }
+  if (r.status() < 400) return;
+  if (r.url().endsWith("/auth/refresh")) return;
+  if (expectingFailure && r.url().includes(expectingFailure)) return;
+  problems.push(`${r.status()} ${r.request().method()} ${r.url()}`);
 });
 
 function check(condition, message) {
@@ -154,6 +166,95 @@ check(
   "a valid claim was created and opened on its own page",
 );
 await page.screenshot({ path: `${out}/07-created.png`, fullPage: true });
+
+// --- Receipts ---------------------------------------------------------------
+//
+// The upload goes straight to the object store: the digest is computed in the
+// browser, the API only signs a URL. Which means this is the only place the
+// whole path can be checked.
+
+await page.getByRole("link", { name: "Expenses", exact: true }).click();
+await page.locator("tbody tr a").first().waitFor({ timeout: 10000 });
+
+// A draft, so a receipt can be attached to it.
+const draftRow = page.locator("tbody tr", { hasText: "Draft" }).first();
+if ((await draftRow.count()) > 0) {
+  await draftRow.locator("a").click();
+  await page.getByRole("heading", { name: "Receipts" }).waitFor({ timeout: 10000 });
+
+  await page.setInputFiles("#receipt-input", {
+    name: "receipt.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.7\nsmoke test receipt\n"),
+  });
+
+  await page.getByRole("link", { name: "receipt.pdf" }).waitFor({ timeout: 20000 });
+  check(true, "a receipt was hashed, uploaded to object storage and recorded");
+  await page.screenshot({ path: `${out}/08-receipt.png`, fullPage: true });
+} else {
+  check(false, "no draft claim available to attach a receipt to");
+}
+
+// --- Organisation -----------------------------------------------------------
+
+await page.getByRole("link", { name: "Organisation" }).click();
+await page.getByRole("heading", { name: "Organisation" }).waitFor();
+await page.getByRole("tab", { name: "Members" }).click();
+await page.locator("tbody tr").first().waitFor({ timeout: 10000 });
+check(
+  (await page.getByText("(you)").count()) === 1,
+  "the members table marks the signed-in person",
+);
+await page.screenshot({ path: `${out}/10-organisation.png`, fullPage: true });
+
+// A department of its own for this run. The script has to be idempotent
+// against a database that already holds everything the last run created - and
+// a budget belongs to a department, so a fresh one is what makes the overlap
+// check below deterministic rather than a collision with last time.
+const department = `Smoke ${Date.now()}`;
+await page.getByRole("tab", { name: "Departments" }).click();
+await page.locator("#dept-name").fill(department);
+await page.getByRole("button", { name: "Add" }).click();
+await page.getByText(department).waitFor({ timeout: 10000 });
+check(true, "a department was created and appeared in the list");
+
+await page.getByRole("tab", { name: "Subscriptions" }).click();
+await page.getByText(/recurring software/i).waitFor({ timeout: 10000 });
+check(true, "the vendor subscription panel loaded");
+
+// --- Budgets ----------------------------------------------------------------
+
+await page.getByRole("link", { name: "Budgets" }).click();
+await page.getByRole("heading", { name: "Budgets" }).waitFor();
+
+const year = new Date().getUTCFullYear();
+
+await page.getByRole("button", { name: "New budget" }).click();
+await page.locator("#budget-department").selectOption({ label: department });
+await page.locator("#budget-start").fill(`${year}-01-01`);
+await page.locator("#budget-end").fill(`${year}-12-31`);
+await page.locator("#budget-amount").fill("5000");
+await page.getByRole("button", { name: "Create", exact: true }).click();
+
+await page.getByText(department).first().waitFor({ timeout: 10000 });
+check(
+  (await page.getByRole("progressbar").count()) > 0,
+  "a budget was created and its consumption rendered",
+);
+await page.screenshot({ path: `${out}/09-budgets.png`, fullPage: true });
+
+// Two envelopes covering the same department and overlapping dates would make
+// "how much is left" ambiguous, so the database refuses it.
+expectingFailure = "/budgets";
+await page.getByRole("button", { name: "New budget" }).click();
+await page.locator("#budget-department").selectOption({ label: department });
+await page.locator("#budget-start").fill(`${year}-06-01`);
+await page.locator("#budget-end").fill(`${year}-08-31`);
+await page.locator("#budget-amount").fill("1000");
+await page.getByRole("button", { name: "Create", exact: true }).click();
+await page.getByText(/overlaps/i).waitFor({ timeout: 10000 });
+check(true, "an overlapping budget was refused, with the reason shown");
+expectingFailure = null;
 
 if (problems.length > 0) {
   console.error(`\n${problems.length} problem(s):\n  ${problems.join("\n  ")}`);

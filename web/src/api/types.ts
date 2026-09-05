@@ -154,16 +154,15 @@ export interface Entitlement {
 }
 
 export interface ExpenseEventRecord {
-  ID: number;
-  ExpenseID: string;
-  Action: string;
-  FromStatus?: ExpenseStatus | null;
-  ToStatus: ExpenseStatus;
-  ActorEmail?: string | null;
-  Reason?: string | null;
-  Amount: Money;
-  Revision: number;
-  OccurredAt: string;
+  id: number;
+  action: string;
+  from_status?: ExpenseStatus | null;
+  to_status: ExpenseStatus;
+  actor_email?: string | null;
+  reason?: string | null;
+  amount: Money;
+  revision: number;
+  occurred_at: string;
 }
 
 export interface Session {
@@ -185,4 +184,62 @@ export interface ErrorBody {
   message: string;
   fields?: FieldError[];
   trace_id?: string;
+}
+
+export interface Attachment {
+  id: string;
+  expense_id: string;
+  filename: string;
+  content_type: string;
+  size_bytes: number;
+  /** Hex, so it matches what sha256sum prints. */
+  checksum: string;
+  uploaded_by: string;
+  created_at: string;
+}
+
+export interface UploadTicket {
+  object_key: string;
+  upload: {
+    url: string;
+    method: string;
+    /** Sent verbatim: they are covered by the signature. */
+    headers: Record<string, string>;
+    expires_at: string;
+  };
+}
+
+export interface Budget {
+  id: string;
+  department_id?: string | null;
+  period_start: string;
+  period_end: string;
+  amount: Money;
+  alert_threshold_bps: number;
+}
+
+export interface Member {
+  id: string;
+  user_id: string;
+  email: string;
+  full_name?: string | null;
+  role: Role;
+  status: string;
+  department_id?: string | null;
+  department_name?: string | null;
+  approval_limit_minor?: number | null;
+}
+
+export interface VendorSubscription {
+  id: string;
+  vendor: string;
+  plan_name?: string | null;
+  department_id?: string | null;
+  department_name?: string | null;
+  amount: Money;
+  cadence: "weekly" | "monthly" | "quarterly" | "annual";
+  status: "active" | "paused" | "cancelled";
+  next_charge_on: string;
+  auto_create_expense: boolean;
+  annualised_minor: number;
 }

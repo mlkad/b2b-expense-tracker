@@ -241,7 +241,41 @@ func (h *ExpenseHandler) History(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": events})
+
+	items := make([]historyEntry, len(events))
+	for i, e := range events {
+		items[i] = historyEntry{
+			ID:         e.ID,
+			Action:     string(e.Action),
+			FromStatus: e.FromStatus,
+			ToStatus:   e.ToStatus,
+			ActorEmail: e.ActorEmail,
+			Reason:     e.Reason,
+			Amount:     e.Amount,
+			Revision:   e.Revision,
+			OccurredAt: e.OccurredAt,
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+// historyEntry is the wire shape of a ledger row.
+//
+// A DTO rather than the repository type, for the same reason the generated
+// sqlc structs carry no JSON tags: a persistence type serialised directly
+// makes every column name part of the public API, and an embedded struct's
+// tagged fields end up beside untagged ones - so one object arrives with both
+// snake_case and PascalCase keys. That is what this endpoint used to do.
+type historyEntry struct {
+	ID         int64           `json:"id"`
+	Action     string          `json:"action"`
+	FromStatus *expense.Status `json:"from_status,omitempty"`
+	ToStatus   expense.Status  `json:"to_status"`
+	ActorEmail *string         `json:"actor_email,omitempty"`
+	Reason     *string         `json:"reason,omitempty"`
+	Amount     shared.Money    `json:"amount"`
+	Revision   int32           `json:"revision"`
+	OccurredAt time.Time       `json:"occurred_at"`
 }
 
 // pathUUID parses a URL parameter, returning a field error rather than a 404

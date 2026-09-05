@@ -115,11 +115,42 @@ Previous results stay on screen while the next request is in flight. Blanking a
 table on every filter change makes the page jump and costs the reader their
 place.
 
+## Receipts
+
+The bytes never pass through the API. The browser computes the file's SHA-256,
+asks the API to sign a URL, `PUT`s straight to the object store, then tells the
+API to record it.
+
+The digest is computed here because **the store verifies against it** — a
+mismatch is refused with `XAmzContentChecksumMismatch`, which is a stronger
+guarantee than an API that never sees the file could make. `crypto.subtle` needs
+a secure context, so over plain HTTP the upload fails with an explicit message
+rather than silently falling back to something weaker.
+
+The response body of the upload is read even though nothing needs it. Leaving a
+stream unconsumed keeps the connection open until collection, and the browser
+reports the finished request as aborted — which shows up in a network log as a
+failed upload that plainly succeeded.
+
 ## What is here
 
-Sign-in, the shell, the overview, the expense list with filters and export, the
-claim detail with its audit ledger, the create and edit forms, and the approver
-queue.
+All of it: sign-in, the shell, the overview, the expense list with filters and
+export, the claim detail with its audit ledger and receipts, the create and edit
+forms, the approver queue, budgets with consumption, and the organisation
+sections for members, departments and vendor subscriptions.
 
-Budgets, departments, members and receipt uploads are next; their endpoints
-exist and are documented in `../api/openapi.json`.
+## The smoke script is not decoration
+
+Eighteen assertions against a live API, and it has now found three things the
+unit tests could not:
+
+1. **The session did not survive a reload** — two refreshes in the same
+   millisecond, the second read as a replayed token.
+2. **`waitForLoadState("networkidle")` is meaningless after a SPA navigation** —
+   no document loads, so it resolves before the data request starts.
+3. **The API mixed `snake_case` and `PascalCase` in one object** — handlers were
+   returning repository structs whose embedded fields carried JSON tags while
+   the added ones did not. Fixed with DTOs on the server.
+
+It is also idempotent: it creates a department of its own each run, because a
+script that only passes against a fresh database is a script nobody runs twice.
