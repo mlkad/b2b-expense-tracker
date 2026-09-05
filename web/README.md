@@ -90,8 +90,36 @@ The alternative it suggests, holding the token in state, would re-create the
 client on every rotation and re-run every effect that depends on it, so a
 routine refresh would reload the whole dashboard.
 
+## Pagination
+
+Next and previous, with no page numbers and no jump-to-page. The server cannot
+answer either without counting the whole filtered set on every request, and a
+`COUNT` over a tenant's history costs more than the page itself. Offering
+controls the data model cannot support is how a list ends up slow for everybody
+so that a few people can jump to the end.
+
+Going back is a **stack of the cursors already visited**. There is no way to
+compute the previous page's cursor from the current one, and pretending
+otherwise is how a "previous" button starts skipping rows. Changing a filter
+discards the stack, because those cursors point into a result set that no longer
+exists.
+
+## Loading state is derived, not stored
+
+`useResource` keeps the key its data was fetched for; anything else is stale by
+definition. A `setLoading(true)` at the top of an effect schedules an extra
+render on every mount and every query change, for a boolean that is already
+computable — and the linter is right to flag it.
+
+Previous results stay on screen while the next request is in flight. Blanking a
+table on every filter change makes the page jump and costs the reader their
+place.
+
 ## What is here
 
-Sign-in, the authenticated shell, and the overview. The expense list, detail and
-forms are the next branch; the API they need is complete and documented in
-`../api/openapi.json`.
+Sign-in, the shell, the overview, the expense list with filters and export, the
+claim detail with its audit ledger, the create and edit forms, and the approver
+queue.
+
+Budgets, departments, members and receipt uploads are next; their endpoints
+exist and are documented in `../api/openapi.json`.
