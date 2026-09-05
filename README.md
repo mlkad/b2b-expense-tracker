@@ -363,6 +363,44 @@ documents only its happy path tells a client nothing about what to handle.
 
 ---
 
+## Dashboard
+
+`web/` — React 19, Vite, TypeScript, Tailwind 4.
+
+The access token lives **in memory only**; the refresh token is an `HttpOnly`
+cookie. `localStorage` is readable by any script the page runs, so one XSS bug
+in one dependency would turn into a stolen credential that outlives the tab.
+
+Refreshing is single-flight across both the 401 path and the bootstrap on load,
+because refresh tokens rotate and the server treats a reused one as theft. The
+browser smoke test found what happens when it is not:
+
+```
+POST /api/v1/auth/refresh 401  (00:41:15.466)
+POST /api/v1/auth/refresh 401  (00:41:15.466)
+session survived a reload: false
+```
+
+Two refreshes in the same millisecond — StrictMode double-invoking a mount
+effect — the second read as a replay, the family revoked, and the session dead
+on every reload.
+
+Money is integer minor units end to end; nothing parses the server's formatted
+string back into a number. Permissions and each claim's `allowed_actions` come
+from the server, so the dashboard never holds a second copy of the state machine
+or the permission matrix.
+
+```bash
+make web-install
+make web          # dev server, proxying /api to the Go API
+make web-check    # typecheck, lint, 30 unit tests
+make web-smoke    # drives the running app with a real browser
+```
+
+More in [web/README.md](web/README.md).
+
+---
+
 ## Layout
 
 ```
@@ -383,7 +421,8 @@ internal/worker             Background jobs
 
 db/migrations               goose migrations, RLS policies in 00006
 db/queries                  Hand-written SQL, compiled by sqlc
-test/integration            Real PostgreSQL via testcontainers
+test/integration            Real PostgreSQL, MinIO and Mailpit via testcontainers
+web                         React dashboard
 ```
 
 ---
