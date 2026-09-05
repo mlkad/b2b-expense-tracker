@@ -1,13 +1,126 @@
 # Dashboard
 
-React 19, Vite, TypeScript, Tailwind 4.
+React 19, Vite, TypeScript, Tailwind 4, TanStack Query, zod, zustand, nuqs.
 
 ```bash
 npm install
 npm run dev      # proxies /api to http://127.0.0.1:8080
-npm run check    # typecheck, lint, unit tests
+npm run check    # typecheck, lint, layer boundaries, unit tests
+npm run layers   # the Feature-Sliced import rules on their own
 npm run smoke    # drives the running app with a real browser
 ```
+
+## The look
+
+A dark theme, and a dark theme is not an inverted light one. Pure black under
+pure white vibrates and is tiring to read for an hour, so the surfaces carry a
+slight violet cast and the brightest text stops short of `#fff`. Three surfaces
+stack — canvas, surface, elevated — and everything is a token in
+`app/index.css`; no component reaches for a hex.
+
+There is **one accent**, a light lavender, used light-on-dark: a saturated
+purple fill with white text fails a contrast check at 13px, and on a page this
+dark the brightest thing on it should be the one action worth taking. Which is
+also why "Approved" is blue rather than purple — an accent that also means
+"approved" stops meaning anything.
+
+Every panel is the same glass, defined once as a `@utility` in `app/index.css`:
+a translucent surface, a hairline *lighter* than the fill rather than darker,
+and a one-pixel highlight along the top edge. That highlight is what makes a
+dark card read as lit from above instead of as a hole cut in the page. The
+active navigation item is the same idea turned up — a violet wash, a brighter
+hairline, and a glow outside it, because colour alone is too quiet at this
+contrast.
+
+`color-scheme: dark` is set on the root. Without it the browser opens a white
+calendar out of a dark date field, which is the most obvious way a dark theme
+announces that it was applied by hand.
+
+Two things are drawn rather than downloaded.
+
+The **sidebar scenes** are SVG — four full-bleed renders would be several times
+the weight of this whole application and would need art direction at three
+breakpoints. Three things make them read as landscape rather than as pattern,
+and all three are what a photograph of one does: ranges get lighter and flatter
+as they recede, actually blurred bands of sky sit between them as the air, and
+no two peaks share a width or an angle. They resolve to the rail's own colour at
+*both* ends, which is what makes the scene emerge from the panel instead of
+starting at a line across it.
+
+The **tile beside each merchant** carries brand colour, and a drawn mark for the
+vendors a finance team sees constantly. Not a fetched favicon: that means
+guessing a domain from a free-text merchant string, handing a third party the
+list of every vendor a tenant has claimed against, and rendering a broken square
+for the corner shop with no website. The marks are simplified deliberately — at
+twenty pixels a logo is a silhouette and a colour.
+
+## Layout
+
+Feature-Sliced. Six layers, and an import may only go **downwards**:
+
+```
+app/        providers, router, query client, styles
+pages/      one folder per screen; composes the layers below
+widgets/    composite blocks - the shell, the claim table, the receipt panel
+features/   things a person does - sign in, filter, decide, upload, export
+entities/   the business objects - expense, budget, member, session, billing
+shared/     the API client, the UI kit, formatting, config
+```
+
+Two rules, checked by `scripts/layers.mjs` in CI:
+
+1. **A layer imports only from layers below it.** Otherwise `shared` ends up
+   importing a page and nothing can be read or moved on its own again.
+2. **A slice is entered through its `index.ts`.** Reaching into
+   `entities/expense/model/queries` makes every file public and every rename a
+   breaking change.
+
+A convention nothing checks is a convention for about a month. The check earned
+its place immediately — it caught three violations the moment it was written,
+including two entities importing each other. Roles moved down into
+`shared/config` (the session and the member list both speak that vocabulary and
+neither owns it), the spend summary moved into `entities/expense` where it
+belongs, and the export menu now takes the query to sign rather than a
+dependency on the filter feature.
+
+## Responses are parsed, not asserted
+
+Every response goes through a zod schema before anything reads it. `as Expense`
+is a claim about the server that nothing verifies; `decode(expenseSchema, …)`
+is a check that fails **at the endpoint that changed**, naming the field:
+
+```
+GET /expenses did not match the expected shape (items.0.amount.amount_minor: expected int)
+```
+
+Unknown keys are stripped rather than rejected, so a server adding a field never
+breaks a deployed dashboard. A missing or mistyped one does throw, because the
+screen cannot render correctly from it and saying so beats drawing it wrong.
+
+This found a real mismatch on the first run: every collection this API returns
+is wrapped in `{ "items": [...] }`, and four of the rewritten queries had been
+written against a bare array.
+
+## Server state is TanStack Query; client state is zustand and the URL
+
+Three kinds of state, kept apart:
+
+- **Server state** — claims, budgets, members. Cached by query key, invalidated
+  by the mutation that changed it. A decision invalidates `["expenses"]`, which
+  is a prefix of the list, the detail and the approver queue, so all three
+  refresh together instead of one screen showing a claim that was approved a
+  moment ago on another.
+- **Session** — a zustand store. A context re-renders every consumer whenever
+  any part of its value changes; components here select the one field they read.
+- **Filters and the open tab** — in the address bar, via nuqs. A filtered view
+  can be sent to a colleague, kept as a bookmark, and survives a reload, and
+  back steps through the filters somebody actually applied.
+
+Retries are for a network that failed, not a server that answered. A 403 retried
+three times is three 403s and a slower error message; a 409 retried is a
+decision the user has not been told about. Only 5xx and a request that never
+arrived are tried again — and a response that failed its schema will fail it
+again.
 
 From the repository root, `make seed` fills the database with an organisation
 that has claims in every state — an empty dashboard shows nothing about whether
@@ -20,8 +133,9 @@ the state of the database rather than on the product.
 
 ## The session
 
-The access token lives **in memory** — a field on an object held by the
-provider, gone when the tab closes. Not `localStorage`, not a readable cookie.
+The access token lives **in memory** — a module-scoped value in
+`shared/api/token.ts`, gone when the tab closes. Not `localStorage`, not a
+readable cookie.
 Both are reachable by any script the page ever runs, so one XSS bug in one
 dependency becomes a stolen credential, and a stored one outlives the tab so the
 theft outlives the session.
@@ -42,7 +156,8 @@ Refresh tokens rotate, and the server treats a reused one as theft: it revokes
 the whole rotation family. So two concurrent refreshes sign the user out.
 
 Both paths that can trigger one — a 401 on any request, and the bootstrap on
-load — go through the same in-flight promise. `scripts/smoke.mjs` found what
+load — go through the same in-flight promise, and the bootstrap is additionally
+memoised at module scope. `scripts/smoke.mjs` found what
 happens when they do not:
 
 ```
@@ -90,15 +205,6 @@ reported as "the export is wrong". Timestamps like "approved at 14:02" are
 instants and *are* rendered in the reader's zone — the opposite choice, for the
 opposite reason.
 
-## Lint
-
-`react/refs` is off in `.oxlintrc.json`. It flags any closure that reads
-`ref.current` inside a component body, which is the documented way to give
-non-React code — here, the API client — a stable accessor to a mutable value.
-The alternative it suggests, holding the token in state, would re-create the
-client on every rotation and re-run every effect that depends on it, so a
-routine refresh would reload the whole dashboard.
-
 ## Pagination
 
 Next and previous, with no page numbers and no jump-to-page. The server cannot
@@ -107,22 +213,29 @@ answer either without counting the whole filtered set on every request, and a
 controls the data model cannot support is how a list ends up slow for everybody
 so that a few people can jump to the end.
 
-Going back is a **stack of the cursors already visited**. There is no way to
-compute the previous page's cursor from the current one, and pretending
-otherwise is how a "previous" button starts skipping rows. Changing a filter
-discards the stack, because those cursors point into a result set that no longer
-exists.
+There is no way to compute the previous page's cursor from the current one, and
+pretending otherwise is how a "previous" button starts skipping rows. What makes
+going back work is that `useInfiniteQuery` keeps every page it has fetched, so
+stepping back is a read from the cache and costs no request at all. Changing a
+filter makes a different query key, and the page index resets with it.
 
-## Loading state is derived, not stored
+Previous results stay on screen while the next request is in flight
+(`keepPreviousData`). Blanking a table on every filter change makes the page
+jump and costs the reader their place — a unit test asserts this, because it is
+the kind of thing a refactor removes silently.
 
-`useResource` keeps the key its data was fetched for; anything else is stale by
-definition. A `setLoading(true)` at the top of an effect schedules an extra
-render on every mount and every query change, for a boolean that is already
-computable — and the linter is right to flag it.
+## Forms validate twice, on purpose
 
-Previous results stay on screen while the next request is in flight. Blanking a
-table on every filter change makes the page jump and costs the reader their
-place.
+A zod schema runs before anything is sent, and whatever the server rejects is
+kept beside the field it names. Neither replaces the other: the schema catches
+an empty field without a round trip, and the server catches what only it can
+know — that an address is already a member, that an amount is over an approval
+limit.
+
+The claim schema is **built per currency**, because how many decimal places are
+valid is a property of the currency and not of the form. One fixed "two decimal
+places" rule would reject a correct yen amount and quietly accept a dinar one
+that loses a digit.
 
 ## Receipts
 
@@ -168,7 +281,7 @@ sections for members, departments and vendor subscriptions.
 
 ## The smoke script is not decoration
 
-Eighteen assertions against a live API, and it has now found three things the
+Nineteen assertions against a live API, and it has now found five things the
 unit tests could not:
 
 1. **The session did not survive a reload** — two refreshes in the same
@@ -181,6 +294,10 @@ unit tests could not:
 4. **The export buttons were entirely broken** — a navigation carries no
    Authorization header, so every download returned 401. Fixed with signed,
    query-bound download links.
+5. **A rewritten claim form left the detail page with no buttons** — `POST
+   /expenses` answers with the claim alone, because only the read path computes
+   `allowed_actions`; priming the detail cache with that smaller response hid
+   every transition until the entry went stale.
 
 It is also idempotent: it creates a department of its own each run, because a
 script that only passes against a fresh database is a script nobody runs twice.

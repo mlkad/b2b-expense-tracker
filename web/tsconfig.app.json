@@ -16,6 +16,12 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* Feature-Sliced imports are written from the root, so a file's layer is
+       visible in the import itself rather than inferred from a run of "../".
+       Paths are relative to this file, which is what lets baseUrl go: it is
+       deprecated in TypeScript 6 and removed in 7. */
+    "paths": { "@/*": ["./src/*"] },
+
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
