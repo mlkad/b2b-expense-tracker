@@ -235,6 +235,7 @@ Full contract, including the two additions it asks of project #1:
 ```
 cmd/api                     HTTP server
 cmd/worker                  Asynq workers and scheduler
+cmd/migrate                 Migration runner, migrations embedded
 
 internal/domain             Entities, the state machine, the permission matrix.
                             No I/O, no imports from the rest of the project.
@@ -267,8 +268,39 @@ make run-worker     # in another shell
 ```bash
 make test               # unit, -race
 make test-integration   # spins up its own postgres
+make cover              # one coverage number, unit and integration together
 make check              # fmt, vet, test
 ```
+
+### Or containerised
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.stack.yml up --build
+```
+
+Two images from one Dockerfile, chosen by build stage rather than by an
+environment variable — there is no shell in either to read one:
+
+```
+docker build --target api     -t expense-api .
+docker build --target worker  -t expense-worker .
+docker build --target migrate -t expense-migrate .
+```
+
+`api` and `worker` are `FROM scratch`, 38 MB, running as uid 65532. No shell,
+no package manager, no libc: nothing for an attacker who reaches code execution
+to pivot with, and nothing that needs patching between releases of this service.
+The cost is that `docker exec` is impossible, which is the intended trade —
+debugging goes through logs, metrics and `/readyz`.
+
+That also rules out the usual `curl -f localhost/readyz` health check, so the
+binary probes itself: `api -healthcheck` reads the same `HTTP_ADDR` the server
+binds and exits non-zero if readiness fails.
+
+The migration image is the exception, and is `alpine` with `psql` in it — a
+migration that failed half way through is exactly when someone needs a prompt
+inside the same network namespace. It embeds the migrations with `go:embed`, so
+the binary and the schema it expects are one artefact.
 
 The integration suite creates a throwaway PostgreSQL container, applies the
 real migrations, and connects as `expense_app` — the non-superuser runtime

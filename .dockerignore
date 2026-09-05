@@ -1,0 +1,24 @@
+# Everything the build does not need. A smaller context is a faster build and,
+# more importantly, keeps secrets and local state out of the image entirely -
+# COPY . . would otherwise pick up .env and the git history.
+.git
+.github
+.env
+.env.*
+!.env.example
+
+bin/
+coverage.out
+coverage.html
+*.test
+
+docs/
+README.md
+Makefile
+docker-compose*.yml
+Dockerfile
+.dockerignore
+
+# The integration suite starts its own database and is not run inside the
+# image.
+test/
