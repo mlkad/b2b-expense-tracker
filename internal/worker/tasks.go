@@ -43,6 +43,18 @@ const (
 	TaskSessionCleanup = "auth:session_cleanup"
 )
 
+// PeriodicTasks is the set a scheduler drives, and the set -task accepts.
+//
+// One list rather than two: a sweep that can be scheduled but not triggered by
+// hand is one nobody can exercise during an incident, and a name accepted by
+// the flag that no handler serves would enqueue a job that is never run.
+var PeriodicTasks = []string{
+	TaskRelaySweep,
+	TaskRecurringSweep,
+	TaskBillingReconcileSweep,
+	TaskSessionCleanup,
+}
+
 // Queues, in priority order. Asynq weights them, so a backlog of nightly
 // reconciliation cannot starve a notification a user is waiting on.
 const (

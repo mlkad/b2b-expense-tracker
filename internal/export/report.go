@@ -97,13 +97,6 @@ func Int(v int64) Cell          { return Cell{Kind: KindInt, Int: v} }
 
 func Date(t time.Time) Cell { return Cell{Kind: KindDate, Time: t} }
 
-func DatePtr(t *time.Time) Cell {
-	if t == nil {
-		return Cell{Kind: KindText}
-	}
-	return Cell{Kind: KindDate, Time: *t}
-}
-
 func DateTimePtr(t *time.Time) Cell {
 	if t == nil {
 		return Cell{Kind: KindText}

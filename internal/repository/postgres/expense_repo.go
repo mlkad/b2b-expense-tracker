@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -57,6 +58,54 @@ func (r *ExpenseRepository) Create(ctx context.Context, tc *postgres.TenantConn,
 		return err
 	}
 
+	*e = *toDomainExpense(row)
+	return nil
+}
+
+// ErrAlreadyMaterialised means a claim for this charge already exists. It is
+// the expected outcome of a sweep re-reading a subscription whose previous run
+// was interrupted after the insert, and is not a failure.
+var ErrAlreadyMaterialised = errors.New("a claim for this charge already exists")
+
+// CreateRecurring writes a claim generated from a vendor subscription.
+//
+// Separate from Create because a duplicate must not abort the transaction: the
+// caller still has to advance the subscription's charge date, and a poisoned
+// transaction means it cannot - so the same subscription is retried, and fails,
+// every day thereafter.
+func (r *ExpenseRepository) CreateRecurring(ctx context.Context, tc *postgres.TenantConn, e *expense.Expense, ev expense.Event) error {
+	q := gen.New(tc)
+
+	row, err := q.CreateRecurringExpense(ctx, gen.CreateRecurringExpenseParams{
+		ID:                   e.ID,
+		TenantID:             tc.TenantID(),
+		SubmitterID:          e.SubmitterID,
+		DepartmentID:         e.DepartmentID,
+		Status:               gen.ExpenseStatus(e.Status),
+		Category:             gen.ExpenseCategory(e.Category),
+		AmountMinor:          e.Amount.Minor,
+		Currency:             string(e.Amount.Currency),
+		Merchant:             e.Merchant,
+		Description:          e.Description,
+		SpentAt:              e.SpentAt,
+		Revision:             e.Revision,
+		Version:              e.Version,
+		SourceSubscriptionID: e.SourceSubscriptionID,
+		CreatedAt:            e.CreatedAt,
+		UpdatedAt:            e.UpdatedAt,
+	})
+	if err != nil {
+		// No row means ON CONFLICT DO NOTHING fired, which is the duplicate
+		// case rather than a missing row.
+		if translate(err) == shared.ErrNotFound {
+			return ErrAlreadyMaterialised
+		}
+		return translate(err)
+	}
+
+	if err := r.appendEvent(ctx, tc, ev); err != nil {
+		return err
+	}
 	*e = *toDomainExpense(row)
 	return nil
 }

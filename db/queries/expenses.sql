@@ -21,6 +21,33 @@ INSERT INTO expenses (
 )
 RETURNING *;
 
+-- CreateRecurringExpense is the sweep's insert, and it differs from
+-- CreateExpense in one way that matters: a duplicate is not an error.
+--
+-- The sweep re-reads a subscription whose claim already exists whenever a
+-- previous run was interrupted after the insert and before the date advanced.
+-- Letting the unique index raise there aborts the transaction, so the advance
+-- that would stop it happening again cannot run - and the subscription is
+-- retried every day, failing every day. ON CONFLICT DO NOTHING returns no row
+-- instead, which the caller reads as "already done" and carries on.
+--
+-- The conflict target repeats the partial index's predicate, because a partial
+-- unique index is only inferred when the WHERE clause matches.
+-- name: CreateRecurringExpense :one
+INSERT INTO expenses (
+    id, tenant_id, submitter_id, department_id, status, category,
+    amount_minor, currency, merchant, description, spent_at,
+    revision, version, source_subscription_id, created_at, updated_at
+) VALUES (
+    @id, @tenant_id, @submitter_id, @department_id, @status, @category,
+    @amount_minor, @currency, @merchant, @description, @spent_at,
+    @revision, @version, @source_subscription_id, @created_at, @updated_at
+)
+ON CONFLICT (tenant_id, source_subscription_id, spent_at)
+    WHERE source_subscription_id IS NOT NULL
+    DO NOTHING
+RETURNING *;
+
 -- name: GetExpense :one
 SELECT * FROM expenses
 WHERE tenant_id = @tenant_id AND id = @id;

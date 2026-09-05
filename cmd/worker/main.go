@@ -10,10 +10,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -36,7 +39,19 @@ func main() {
 	}
 }
 
+// runTask enqueues one sweep and exits, instead of starting the server.
+//
+// The scheduled sweeps otherwise run only on a cron - the recurring charge
+// sweep at 02:15, reconciliation at 03:40 - which makes them impossible to
+// exercise deliberately, whether during an incident or while checking that
+// they work at all. This is the same enqueue the scheduler performs, not a
+// second path that could behave differently.
+var runTask = flag.String("task", "",
+	"enqueue one sweep and exit: "+strings.Join(worker.PeriodicTasks, ", "))
+
 func run() error {
+	flag.Parse()
+
 	cfg, err := config.Load()
 	if err != nil {
 		return err
@@ -169,14 +184,24 @@ func run() error {
 		{"40 3 * * *", worker.TaskBillingReconcileSweep, worker.QueueLow},
 		{"20 4 * * *", worker.TaskSessionCleanup, worker.QueueLow},
 	}
+	// A sweep listed for -task but never scheduled would silently never run;
+	// one scheduled but not listed could not be triggered during an incident.
+	if len(periodic) != len(worker.PeriodicTasks) {
+		return fmt.Errorf("%d sweeps are scheduled but %d are listed in worker.PeriodicTasks",
+			len(periodic), len(worker.PeriodicTasks))
+	}
 	for _, p := range periodic {
 		if _, err := scheduler.Register(p.cron,
 			asynq.NewTask(p.task, nil),
 			asynq.Queue(p.queue),
-			// One in flight at a time: a sweep still running when the next
-			// tick fires must not be doubled up, since both copies would claim
-			// overlapping batches.
-			asynq.TaskID(p.task),
+			// A lease that expires, not an identifier that is held.
+			//
+			// asynq.TaskID would also stop two copies overlapping, and would
+			// keep stopping them after the task was archived - so a sweep that
+			// failed permanently could never run again, silently. Unique takes
+			// a lock for a bounded time instead, so a failure costs one
+			// interval rather than every future one.
+			asynq.Unique(uniqueFor(p.cron)),
 		); err != nil {
 			return fmt.Errorf("schedule %s: %w", p.task, err)
 		}
@@ -188,6 +213,19 @@ func run() error {
 			log.Error("scheduler stopped", slog.String("error", err.Error()))
 		}
 	}()
+
+	if *runTask != "" {
+		if !slices.Contains(worker.PeriodicTasks, *runTask) {
+			return fmt.Errorf("unknown task %q; known sweeps are %s",
+				*runTask, strings.Join(worker.PeriodicTasks, ", "))
+		}
+		if err := queue.EnqueuePeriodic(ctx, *runTask); err != nil {
+			return fmt.Errorf("enqueue %s: %w", *runTask, err)
+		}
+		log.Info("sweep enqueued; a running worker will pick it up",
+			slog.String("task", *runTask))
+		return nil
+	}
 
 	log.Info("worker starting", slog.String("redis", cfg.Redis.Addr))
 
@@ -214,6 +252,18 @@ func run() error {
 
 	log.Info("worker stopped cleanly")
 	return nil
+}
+
+// uniqueFor is how long a sweep holds its overlap lock.
+//
+// Comfortably under the interval between runs, so the lock is gone before the
+// next tick and a run is never skipped because the previous lease outlived it.
+// The relay sweep runs every ten minutes; the rest are daily.
+func uniqueFor(cron string) time.Duration {
+	if strings.HasPrefix(cron, "*/10") {
+		return 8 * time.Minute
+	}
+	return time.Hour
 }
 
 // buildNotifier wires the mail relay, or a logging stand-in when there is none.
