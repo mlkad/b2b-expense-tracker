@@ -156,3 +156,10 @@ WHERE event_id IN (
      FOR UPDATE SKIP LOCKED
 )
 RETURNING *;
+
+-- name: CountActiveVendorSubscriptions :one
+SELECT count(*) FROM vendor_subscriptions
+WHERE tenant_id = @tenant_id AND status <> 'cancelled';
+
+-- name: GetVendorSubscription :one
+SELECT * FROM vendor_subscriptions WHERE tenant_id = @tenant_id AND id = @id;

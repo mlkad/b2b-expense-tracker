@@ -19,7 +19,7 @@ import (
 	repo "github.com/mlkad/b2b-expense-tracker/internal/repository/postgres"
 )
 
-func actorFor(o org, membershipID string, role tenant.Role, dept bool) tenant.Actor {
+func actorFor(o orgFixture, membershipID string, role tenant.Role, dept bool) tenant.Actor {
 	a := tenant.Actor{
 		TenantID:     o.TenantID,
 		Role:         role,

@@ -166,6 +166,18 @@ func (q *Queries) ClaimDueVendorSubscriptions(ctx context.Context, arg ClaimDueV
 	return items, nil
 }
 
+const countActiveVendorSubscriptions = `-- name: CountActiveVendorSubscriptions :one
+SELECT count(*) FROM vendor_subscriptions
+WHERE tenant_id = $1 AND status <> 'cancelled'
+`
+
+func (q *Queries) CountActiveVendorSubscriptions(ctx context.Context, tenantID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveVendorSubscriptions, tenantID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createVendorSubscription = `-- name: CreateVendorSubscription :one
 
 INSERT INTO vendor_subscriptions (
@@ -268,6 +280,39 @@ func (q *Queries) GetTenantEntitlement(ctx context.Context, tenantID uuid.UUID) 
 		&i.CurrentPeriodEnd,
 		&i.CancelAtPeriodEnd,
 		&i.TrialEnd,
+	)
+	return i, err
+}
+
+const getVendorSubscription = `-- name: GetVendorSubscription :one
+SELECT id, tenant_id, vendor, plan_name, department_id, owner_id, amount_minor, currency, cadence, status, next_charge_on, last_generated_on, auto_create_expense, cancelled_at, created_at, updated_at FROM vendor_subscriptions WHERE tenant_id = $1 AND id = $2
+`
+
+type GetVendorSubscriptionParams struct {
+	TenantID uuid.UUID
+	ID       uuid.UUID
+}
+
+func (q *Queries) GetVendorSubscription(ctx context.Context, arg GetVendorSubscriptionParams) (VendorSubscription, error) {
+	row := q.db.QueryRow(ctx, getVendorSubscription, arg.TenantID, arg.ID)
+	var i VendorSubscription
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.Vendor,
+		&i.PlanName,
+		&i.DepartmentID,
+		&i.OwnerID,
+		&i.AmountMinor,
+		&i.Currency,
+		&i.Cadence,
+		&i.Status,
+		&i.NextChargeOn,
+		&i.LastGeneratedOn,
+		&i.AutoCreateExpense,
+		&i.CancelledAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

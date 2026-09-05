@@ -156,3 +156,77 @@ func NextChargeDate(from time.Time, cadence string) time.Time {
 		return from.AddDate(0, 1, 0)
 	}
 }
+
+// StatusTotal is one row of the dashboard's summary strip.
+type StatusTotal struct {
+	Status     string       `json:"status"`
+	ClaimCount int64        `json:"claim_count"`
+	Total      shared.Money `json:"total"`
+}
+
+// DepartmentTotal is committed spend per department over a window.
+type DepartmentTotal struct {
+	DepartmentID   *uuid.UUID   `json:"department_id,omitempty"`
+	DepartmentName string       `json:"department_name"`
+	ClaimCount     int64        `json:"claim_count"`
+	Total          shared.Money `json:"total"`
+}
+
+// Summary answers both of the dashboard's headline aggregates in one
+// transaction, so the two halves of the strip describe the same instant.
+//
+// They are computed in SQL rather than by summing what the list endpoint
+// returned: a dashboard that added up its first page would report the wrong
+// total for every tenant with more than one page, and would be wrong in a way
+// that looks plausible.
+func (r *BudgetRepository) Summary(
+	ctx context.Context,
+	tc *postgres.TenantConn,
+	from, to *time.Time,
+	defaultCurrency shared.Currency,
+) ([]StatusTotal, []DepartmentTotal, error) {
+	q := gen.New(tc)
+
+	statusRows, err := q.CountExpensesByStatus(ctx, gen.CountExpensesByStatusParams{
+		TenantID:  tc.TenantID(),
+		SpentFrom: from,
+		SpentTo:   to,
+	})
+	if err != nil {
+		return nil, nil, translate(err)
+	}
+
+	byStatus := make([]StatusTotal, len(statusRows))
+	for i, row := range statusRows {
+		byStatus[i] = StatusTotal{
+			Status:     string(row.Status),
+			ClaimCount: row.ClaimCount,
+			// The aggregate has no currency column of its own: claims within a
+			// tenant are captured in the tenant's currency, which is where this
+			// comes from. Mixing currencies would make the sum meaningless, and
+			// the capture path is what prevents it.
+			Total: shared.Money{Minor: row.TotalMinor, Currency: defaultCurrency},
+		}
+	}
+
+	deptRows, err := q.SpendByDepartment(ctx, gen.SpendByDepartmentParams{
+		TenantID:  tc.TenantID(),
+		SpentFrom: from,
+		SpentTo:   to,
+	})
+	if err != nil {
+		return nil, nil, translate(err)
+	}
+
+	byDepartment := make([]DepartmentTotal, len(deptRows))
+	for i, row := range deptRows {
+		byDepartment[i] = DepartmentTotal{
+			DepartmentID:   row.DepartmentID,
+			DepartmentName: row.DepartmentName,
+			ClaimCount:     row.ClaimCount,
+			Total:          shared.Money{Minor: row.TotalMinor, Currency: currency(row.Currency)},
+		}
+	}
+
+	return byStatus, byDepartment, nil
+}

@@ -111,6 +111,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func classify(err error) (int, string) {
+	var planLimit *service.ErrPlanLimit
+
 	switch {
 	case errors.Is(err, shared.ErrNotFound):
 		return http.StatusNotFound, "not found"
@@ -120,6 +122,12 @@ func classify(err error) (int, string) {
 		return http.StatusConflict, err.Error()
 	case errors.Is(err, shared.ErrValidation):
 		return http.StatusUnprocessableEntity, err.Error()
+	case errors.As(err, &planLimit):
+		// 402, not 403. The caller has the authority; what they lack is the
+		// plan. A 403 would send them to an administrator, who cannot help.
+		// The message names the current count and the ceiling so the dashboard
+		// can offer the upgrade rather than just refusing.
+		return http.StatusPaymentRequired, planLimit.Error()
 	case errors.Is(err, service.ErrExportTooLarge):
 		return http.StatusRequestEntityTooLarge, err.Error()
 	case errors.Is(err, gateway.ErrUnavailable):

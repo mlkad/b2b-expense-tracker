@@ -547,23 +547,6 @@ func (q *Queries) SetTenantBillingRef(ctx context.Context, arg SetTenantBillingR
 	return result.RowsAffected(), nil
 }
 
-const setTenantStatus = `-- name: SetTenantStatus :execrows
-UPDATE tenants SET status = $1 WHERE id = $2
-`
-
-type SetTenantStatusParams struct {
-	Status TenantStatus
-	ID     uuid.UUID
-}
-
-func (q *Queries) SetTenantStatus(ctx context.Context, arg SetTenantStatusParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setTenantStatus, arg.Status, arg.ID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const updateMembership = `-- name: UpdateMembership :one
 UPDATE memberships
 SET role                 = $1,
