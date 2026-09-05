@@ -1,0 +1,56 @@
+# Local development and integration-test dependencies.
+#
+# Ports are deliberately non-default and bound to 127.0.0.1: a stray
+# `psql -h localhost` from another project should not reach this database, and
+# nothing here should be reachable from the network.
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    container_name: bet-postgres
+    environment:
+      POSTGRES_USER: expense
+      POSTGRES_PASSWORD: local_dev_pw
+      POSTGRES_DB: expenses
+      # scram-sha-256 rather than the trust/md5 defaults, so the local setup
+      # exercises the same authentication path as a deployed one.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: UTC
+    ports:
+      - "127.0.0.1:5441:5432"
+    volumes:
+      - bet-pgdata:/var/lib/postgresql/data
+      - ./scripts/postgres-init:/docker-entrypoint-initdb.d:ro
+    command:
+      - postgres
+      # RLS is only as good as the roles around it. Logging connections makes
+      # "which role is the app actually using" answerable from the log rather
+      # than from someone's memory of the deploy.
+      - -c
+      - log_connections=on
+      - -c
+      - log_min_duration_statement=250ms
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U expense -d expenses"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: bet-redis
+    ports:
+      - "127.0.0.1:6390:6379"
+    # appendonly so a restart does not silently drop the Asynq queue mid-test.
+    command: ["redis-server", "--appendonly", "yes", "--save", ""]
+    volumes:
+      - bet-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  bet-pgdata:
+  bet-redisdata:
