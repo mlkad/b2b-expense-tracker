@@ -63,6 +63,7 @@ type Querier interface {
 	ClaimDueVendorSubscriptions(ctx context.Context, arg ClaimDueVendorSubscriptionsParams) ([]VendorSubscription, error)
 	CountActiveMembers(ctx context.Context, tenantID uuid.UUID) (int64, error)
 	CountActiveVendorSubscriptions(ctx context.Context, tenantID uuid.UUID) (int64, error)
+	CountExpenseAttachments(ctx context.Context, arg CountExpenseAttachmentsParams) (int64, error)
 	// The export scan is deliberately NOT here.
 	//
 	// sqlc emits a :many query as a function that returns a slice, which means it
@@ -129,6 +130,10 @@ type Querier interface {
 	// below, which is our subscription and decides what they are entitled to.
 	CreateVendorSubscription(ctx context.Context, arg CreateVendorSubscriptionParams) (VendorSubscription, error)
 	DeleteBudget(ctx context.Context, arg DeleteBudgetParams) (int64, error)
+	// The RLS policy expense_attachments_delete_drafts_only refuses this for any
+	// claim that is no longer a draft, so the predicate is not repeated here: the
+	// policy is the guarantee and duplicating it would invite the two to drift.
+	DeleteExpenseAttachment(ctx context.Context, arg DeleteExpenseAttachmentParams) (int64, error)
 	// The RLS policy expenses_delete_drafts_only refuses this for any other
 	// status, so the predicate here is documentation of an existing guarantee
 	// rather than the guarantee itself.
@@ -136,6 +141,13 @@ type Querier interface {
 	DeleteExpiredRefreshTokens(ctx context.Context, grace pgtype.Interval) (int64, error)
 	GetDepartment(ctx context.Context, arg GetDepartmentParams) (Department, error)
 	GetExpense(ctx context.Context, arg GetExpenseParams) (Expense, error)
+	// SpendByStatus and SpendByDepartment back the dashboard's summary strip.
+	//
+	// Both are aggregates over the same rows the list endpoint pages through, so
+	// they are answered from expenses_budget_rollup_idx rather than by counting
+	// what the client already has - a dashboard that summed its first page would
+	// report the wrong total on every tenant with more than one page.
+	GetExpenseAttachment(ctx context.Context, arg GetExpenseAttachmentParams) (GetExpenseAttachmentRow, error)
 	// GetExpenseForUpdate takes a row lock for the duration of the transaction.
 	//
 	// Read-decide-write is only atomic while the row is held. Without the lock,

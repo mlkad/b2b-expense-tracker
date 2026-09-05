@@ -32,6 +32,8 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
     environment:
@@ -48,6 +50,11 @@ services:
       DB_VERIFY_TENANT_RESET: "true"
       REDIS_ADDR: redis:6379
       JWT_SECRET: local-development-secret-at-least-32-bytes
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_BUCKET: receipts
+      STORAGE_ACCESS_KEY: local_storage_key
+      STORAGE_SECRET_KEY: local_storage_secret
+      STORAGE_PATH_STYLE: "true"
     healthcheck:
       # scratch has no shell and no curl, so the usual CMD-SHELL probe cannot
       # work. The binary answers its own probe instead.

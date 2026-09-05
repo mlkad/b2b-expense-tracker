@@ -22,6 +22,7 @@ import (
 	"github.com/mlkad/b2b-expense-tracker/internal/logger"
 	repo "github.com/mlkad/b2b-expense-tracker/internal/repository/postgres"
 	"github.com/mlkad/b2b-expense-tracker/internal/service"
+	"github.com/mlkad/b2b-expense-tracker/internal/storage"
 	"github.com/mlkad/b2b-expense-tracker/internal/transport/http/middleware"
 )
 
@@ -130,6 +131,13 @@ func classify(err error) (int, string) {
 		return http.StatusPaymentRequired, planLimit.Error()
 	case errors.Is(err, service.ErrExportTooLarge):
 		return http.StatusRequestEntityTooLarge, err.Error()
+	case errors.Is(err, service.ErrStorageDisabled):
+		// 501, not 500. The request is well formed and the code is correct;
+		// this deployment simply has no object store, and a 500 would send
+		// somebody looking for a bug.
+		return http.StatusNotImplemented, err.Error()
+	case errors.Is(err, storage.ErrUnavailable):
+		return http.StatusServiceUnavailable, "receipt storage is temporarily unavailable"
 	case errors.Is(err, gateway.ErrUnavailable):
 		return http.StatusServiceUnavailable, "the payment service is temporarily unavailable"
 	case errors.Is(err, gateway.ErrRejected):

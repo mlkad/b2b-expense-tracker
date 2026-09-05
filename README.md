@@ -230,6 +230,47 @@ Full contract, including the two additions it asks of project #1:
 
 ---
 
+## Receipts
+
+`POST /expenses/{id}/attachments/presign` → client PUTs to the object store →
+`POST /expenses/{id}/attachments`
+
+Two steps rather than one multipart upload, because a receipt is up to 25 MiB
+and an API that proxied it would hold that much per concurrent upload, spend its
+request deadline on the client's connection speed, and put a user-chosen file
+through the process that also holds database credentials. The bytes never come
+through this service; its whole involvement is one HMAC and one row.
+
+The signature binds the upload to the declared content type and SHA-256, so the
+object store — the only party that sees the content — is what verifies it:
+
+```
+--- upload with content that does not match the signed checksum
+    HTTP 400 XAmzContentChecksumMismatch
+```
+
+What a presigned PUT *cannot* carry is a length limit; only the browser POST
+policy form can. So the declared size is checked before signing and the stored
+size is checked again on confirm, which is the honest version of that
+guarantee — a client can waste bucket space once and cannot get a row for it.
+
+Confirm stat-s the object before recording it. Without that the attachment list
+would be a set of assertions rather than a set of files: a caller could register
+a receipt it never uploaded, or point a row at another tenant's object — and the
+object store has no row-level security to stop them reading it afterwards.
+
+Content types are an allowlist of PDF and images. `image/svg+xml` is the one
+people forget: an image to a human, a scriptable document to a browser, and a
+stored XSS against whoever opens the receipt.
+
+SigV4 presigning is written out in `internal/storage` rather than taken from the
+AWS SDK — this service needs one thing from S3 and the SDK is a large surface to
+carry for a hundred lines of HMAC. The trade is that a mistake is silent until a
+request is rejected, so it is verified against a real MinIO in the integration
+suite rather than against my own idea of the algorithm.
+
+---
+
 ## Layout
 
 ```
@@ -245,6 +286,7 @@ internal/service            Transaction scope, orchestration
 internal/transport/http     Router, middleware, handlers
 internal/export             Streaming CSV, XLSX and PDF encoders
 internal/gateway            Client and relay for project #1
+internal/storage            S3-compatible object store, SigV4 presigning
 internal/worker             Background jobs
 
 db/migrations               goose migrations, RLS policies in 00006

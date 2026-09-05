@@ -28,6 +28,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -38,11 +40,13 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go"
+	tcminio "github.com/testcontainers/testcontainers-go/modules/minio"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/mlkad/b2b-expense-tracker/internal/logger"
 	"github.com/mlkad/b2b-expense-tracker/internal/platform/postgres"
+	"github.com/mlkad/b2b-expense-tracker/internal/storage"
 )
 
 const (
@@ -61,6 +65,12 @@ var (
 	// ownerDSN is used for fixtures and for the assertions that need to see
 	// past RLS to prove something was or was not written.
 	ownerDSN string
+
+	// objectStore points at a real MinIO. The presigned-URL signing is written
+	// by hand rather than taken from the AWS SDK, so it is verified against a
+	// server that actually checks signatures - a unit test asserting the
+	// signature equals what this code produces would prove nothing at all.
+	objectStore storage.Store
 )
 
 func TestMain(m *testing.M) {
@@ -71,6 +81,93 @@ func TestMain(m *testing.M) {
 	}
 	os.Exit(code)
 }
+
+// startObjectStore brings up MinIO and creates the bucket.
+func startObjectStore(ctx context.Context) error {
+	const (
+		accessKey = "integration-key"
+		secretKey = "integration-secret"
+		bucket    = "receipts"
+	)
+
+	container, err := tcminio.Run(ctx, "minio/minio:RELEASE.2024-08-17T01-24-54Z",
+		tcminio.WithUsername(accessKey),
+		tcminio.WithPassword(secretKey),
+	)
+	if err != nil {
+		return fmt.Errorf("start minio: %w", err)
+	}
+	cleanups = append(cleanups, func() {
+		if err := testcontainers.TerminateContainer(container); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: terminate minio: %v\n", err)
+		}
+	})
+
+	endpoint, err := container.ConnectionString(ctx)
+	if err != nil {
+		return fmt.Errorf("minio endpoint: %w", err)
+	}
+
+	store, err := storage.NewS3Store(storage.S3Config{
+		Endpoint:  "http://" + endpoint,
+		Region:    "us-east-1",
+		Bucket:    bucket,
+		AccessKey: accessKey,
+		SecretKey: secretKey,
+		PathStyle: true,
+	})
+	if err != nil {
+		return fmt.Errorf("build store: %w", err)
+	}
+
+	// The bucket is created with the same signing path everything else uses,
+	// which means a broken signature fails here rather than in the first test.
+	if err := createBucket(ctx, "http://"+endpoint, bucket, accessKey, secretKey); err != nil {
+		return err
+	}
+
+	objectStore = store
+	return nil
+}
+
+// createBucket issues a signed PUT against the bucket itself.
+func createBucket(ctx context.Context, endpoint, bucket, accessKey, secretKey string) error {
+	// A store whose "bucket" is empty and whose "key" is the bucket name
+	// produces exactly the canonical path a bucket creation needs, /bucket,
+	// without a second signing implementation for one call.
+	signer, err := storage.NewS3Store(storage.S3Config{
+		Endpoint: endpoint, Region: "us-east-1", Bucket: bucket,
+		AccessKey: accessKey, SecretKey: secretKey, PathStyle: true,
+	})
+	if err != nil {
+		return err
+	}
+
+	url, err := signer.PresignBucketCreate(time.Minute)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("create bucket: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 409 BucketAlreadyOwnedByYou is success for our purposes.
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+		return fmt.Errorf("create bucket returned %d: %s", resp.StatusCode, body)
+	}
+	return nil
+}
+
+// cleanups run in reverse order once the suite finishes.
+var cleanups []func()
 
 func runSuite(m *testing.M) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -95,6 +192,9 @@ func runSuite(m *testing.M) (int, error) {
 		if err := testcontainers.TerminateContainer(container); err != nil {
 			fmt.Fprintf(os.Stderr, "integration: terminate container: %v\n", err)
 		}
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
+		}
 	}()
 
 	ownerDSN, err = container.ConnectionString(ctx, "sslmode=disable")
@@ -114,6 +214,10 @@ func runSuite(m *testing.M) (int, error) {
 		return 1, fmt.Errorf("app dsn: %w", err)
 	}
 	appDSN = swapCredentials(appDSN, appUser, appPassword)
+
+	if err := startObjectStore(ctx); err != nil {
+		return 1, err
+	}
 
 	log := logger.New(logger.ParseLevel("error"), logger.FormatText, "integration", "test")
 	app, err = postgres.Open(ctx, postgres.Config{

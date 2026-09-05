@@ -27,6 +27,7 @@ type Config struct {
 	Redis    RedisConfig
 	JWT      JWTConfig
 	Gateway  GatewayConfig
+	Storage  StorageConfig
 	Log      LogConfig
 }
 
@@ -73,6 +74,37 @@ type GatewayConfig struct {
 	ServiceSecret string
 	RelaySecret   string
 	Enabled       bool
+}
+
+// StorageConfig points at the object store receipts live in.
+//
+// There is one implementation and no local filesystem alternative on purpose.
+// A second backend is a second thing that can behave differently, and the
+// difference only ever surfaces as "it worked locally" - so development runs
+// the same MinIO that production's S3 is API-compatible with.
+type StorageConfig struct {
+	Endpoint  string
+	Region    string
+	Bucket    string
+	AccessKey string
+	SecretKey string
+
+	// PathStyle addresses the bucket as endpoint/bucket/key. MinIO and most
+	// self-hosted stores need it; AWS prefers the virtual-hosted form.
+	PathStyle bool
+
+	// UploadTTL and DownloadTTL bound how long a signed URL is usable.
+	//
+	// Upload is short because the client is expected to start immediately, and
+	// a leaked URL is a write into the bucket. Download is longer because a
+	// browser may follow the redirect after a delay, but still minutes rather
+	// than hours: the URL is the entire authorisation, so its lifetime is the
+	// window in which a forwarded link works for somebody who should not have
+	// it.
+	UploadTTL   time.Duration
+	DownloadTTL time.Duration
+
+	Enabled bool
 }
 
 type LogConfig struct {
@@ -140,6 +172,17 @@ func Load() (*Config, error) {
 			RelaySecret:   os.Getenv("BILLING_RELAY_SECRET"),
 		},
 
+		Storage: StorageConfig{
+			Endpoint:    os.Getenv("STORAGE_ENDPOINT"),
+			Region:      env("STORAGE_REGION", "us-east-1"),
+			Bucket:      env("STORAGE_BUCKET", "receipts"),
+			AccessKey:   os.Getenv("STORAGE_ACCESS_KEY"),
+			SecretKey:   os.Getenv("STORAGE_SECRET_KEY"),
+			PathStyle:   boolean("STORAGE_PATH_STYLE", true),
+			UploadTTL:   duration("STORAGE_UPLOAD_TTL", 15*time.Minute, &problems),
+			DownloadTTL: duration("STORAGE_DOWNLOAD_TTL", 10*time.Minute, &problems),
+		},
+
 		Log: LogConfig{
 			Level:  logger.ParseLevel(env("LOG_LEVEL", "info")),
 			Format: logger.Format(env("LOG_FORMAT", "json")),
@@ -147,6 +190,18 @@ func Load() (*Config, error) {
 	}
 
 	cfg.Gateway.Enabled = cfg.Gateway.BaseURL != ""
+	cfg.Storage.Enabled = cfg.Storage.Endpoint != ""
+
+	if cfg.Storage.Enabled {
+		if cfg.Storage.AccessKey == "" || cfg.Storage.SecretKey == "" {
+			problems = append(problems, "STORAGE_ACCESS_KEY and STORAGE_SECRET_KEY are required when STORAGE_ENDPOINT is set")
+		}
+		// A presigned URL is the entire authorisation for the object it names,
+		// so a long-lived one is a credential with no revocation.
+		if cfg.Storage.DownloadTTL > time.Hour {
+			problems = append(problems, "STORAGE_DOWNLOAD_TTL must not exceed 1h: a presigned URL is the only authorisation on the object it names")
+		}
+	}
 
 	if cfg.Database.DSN == "" {
 		problems = append(problems, "DATABASE_URL is required")
