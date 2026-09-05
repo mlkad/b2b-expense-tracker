@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,17 +14,21 @@ import (
 
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/expense"
 	"github.com/mlkad/b2b-expense-tracker/internal/domain/shared"
+	"github.com/mlkad/b2b-expense-tracker/internal/notify"
 	"github.com/mlkad/b2b-expense-tracker/internal/platform/postgres"
 	repo "github.com/mlkad/b2b-expense-tracker/internal/repository/postgres"
 	"github.com/mlkad/b2b-expense-tracker/internal/service"
 )
 
-// Notifier is whatever actually sends a message. It is an interface because
-// this package should not care whether that is email, Slack or a webhook, and
-// because a test needs to assert what would have been sent without sending it.
+// Notifier is whatever actually delivers a message.
+//
+// It takes fully resolved events rather than identifiers: the recipients and
+// the claim are read inside the transaction that already holds the tenant
+// binding, so the notifier needs no database access of its own and can be
+// exercised in a test with a recorder.
 type Notifier interface {
-	ExpenseDecided(ctx context.Context, tenantID, expenseID string, action expense.Action) error
-	BudgetThresholdBreached(ctx context.Context, tenantID string, c repo.Consumption) error
+	ExpenseTransition(ctx context.Context, e notify.ExpenseEvent) error
+	BudgetThreshold(ctx context.Context, e notify.BudgetEvent) error
 }
 
 type Handlers struct {
@@ -31,6 +36,7 @@ type Handlers struct {
 	expenses *repo.ExpenseRepository
 	budgets  *repo.BudgetRepository
 	tenancy  *repo.TenancyRepository
+	orgs     *repo.OrgRepository
 	billing  *service.BillingService
 	notifier Notifier
 	log      *slog.Logger
@@ -45,13 +51,14 @@ func NewHandlers(
 	expenses *repo.ExpenseRepository,
 	budgets *repo.BudgetRepository,
 	tenancy *repo.TenancyRepository,
+	orgs *repo.OrgRepository,
 	billing *service.BillingService,
 	queue *Client,
 	notifier Notifier,
 	log *slog.Logger,
 ) *Handlers {
 	return &Handlers{
-		db: db, expenses: expenses, budgets: budgets, tenancy: tenancy,
+		db: db, expenses: expenses, budgets: budgets, tenancy: tenancy, orgs: orgs,
 		billing: billing, queue: queue, notifier: notifier, log: log,
 	}
 }
@@ -83,7 +90,17 @@ func (h *Handlers) HandleExpenseTransition(ctx context.Context, t *asynq.Task) e
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 
-	return h.db.WithTenantTx(ctx, postgres.Binding{TenantID: payload.TenantID, ReadOnly: true},
+	if h.notifier == nil {
+		return nil
+	}
+
+	var event notify.ExpenseEvent
+
+	// Everything the message needs is read in one transaction, so the claim
+	// and the recipient list describe the same instant. Sending happens after
+	// it commits: a relay that takes three seconds must not hold a database
+	// connection for three seconds.
+	err := h.db.WithTenantTx(ctx, postgres.Binding{TenantID: payload.TenantID, ReadOnly: true},
 		func(ctx context.Context, tc *postgres.TenantConn) error {
 			claim, err := h.expenses.Get(ctx, tc, payload.ExpenseID)
 			if err != nil {
@@ -92,16 +109,128 @@ func (h *Handlers) HandleExpenseTransition(ctx context.Context, t *asynq.Task) e
 					// a claim in another tenant. Neither is worth retrying.
 					h.log.InfoContext(ctx, "notification skipped: claim is gone",
 						slog.String("expense_id", payload.ExpenseID.String()))
-					return nil
+					return errSkip
 				}
 				return err
 			}
 
-			if h.notifier == nil {
-				return nil
+			org, err := h.tenancy.GetTenant(ctx, tc)
+			if err != nil {
+				return err
 			}
-			return h.notifier.ExpenseDecided(ctx, payload.TenantID.String(), claim.ID.String(), payload.Action)
+
+			event, err = h.buildExpenseEvent(ctx, tc, org.Name, claim, payload.Action)
+			return err
 		})
+	switch {
+	case errors.Is(err, errSkip):
+		return nil
+	case err != nil:
+		return err
+	}
+
+	return h.notifier.ExpenseTransition(ctx, event)
+}
+
+// errSkip unwinds a read transaction for a reason that is not a failure. It is
+// never returned to the caller.
+var errSkip = errors.New("nothing to notify about")
+
+// buildExpenseEvent resolves who to tell and what to tell them.
+//
+// Who depends on the direction of the transition. A submission goes to the
+// people who can decide on it; a decision goes back to the person who filed
+// it. Sending both to everybody would be simpler and would mean an approver
+// receives a copy of every outcome they already know about, which is how a
+// notification becomes something people filter away.
+func (h *Handlers) buildExpenseEvent(
+	ctx context.Context,
+	tc *postgres.TenantConn,
+	tenantName string,
+	claim *expense.Expense,
+	action expense.Action,
+) (notify.ExpenseEvent, error) {
+	event := notify.ExpenseEvent{
+		TenantName:   tenantName,
+		ExpenseID:    claim.ID,
+		Action:       action,
+		Status:       claim.Status,
+		Merchant:     claim.Merchant,
+		Amount:       claim.Amount,
+		SpentAt:      claim.SpentAt,
+		DecisionNote: claim.DecisionNote,
+		PaymentRef:   claim.PaymentRef,
+		Revision:     claim.Revision,
+	}
+
+	submitter, err := h.tenancy.Contact(ctx, tc, claim.SubmitterID)
+	if err != nil && !errors.Is(err, shared.ErrNotFound) {
+		return event, err
+	}
+	event.SubmitterName = displayName(submitter)
+
+	if claim.DecidedBy != nil {
+		decider, err := h.tenancy.Contact(ctx, tc, *claim.DecidedBy)
+		if err != nil && !errors.Is(err, shared.ErrNotFound) {
+			return event, err
+		}
+		event.DecidedByName = displayName(decider)
+	}
+
+	if claim.DepartmentID != nil {
+		if dept, err := h.orgs.GetDepartment(ctx, tc, *claim.DepartmentID); err == nil {
+			name := dept.Name
+			event.DepartmentName = &name
+		}
+	}
+
+	switch action {
+	case expense.ActionSubmit:
+		approvers, err := h.tenancy.Approvers(ctx, tc, claim.DepartmentID)
+		if err != nil {
+			return event, err
+		}
+		for _, a := range approvers {
+			// The person who filed it knows they filed it.
+			if a.MembershipID == claim.SubmitterID {
+				continue
+			}
+			event.To = append(event.To, notify.Recipient{Email: a.Email, Name: displayName(a)})
+		}
+
+	case expense.ActionApprove, expense.ActionReject, expense.ActionPay:
+		if submitter.Email != "" {
+			event.To = []notify.Recipient{{Email: submitter.Email, Name: displayName(submitter)}}
+		}
+
+	case expense.ActionWithdraw:
+		// Told to the approvers, so a queue somebody was working through does
+		// not leave them wondering where an item went.
+		approvers, err := h.tenancy.Approvers(ctx, tc, claim.DepartmentID)
+		if err != nil {
+			return event, err
+		}
+		for _, a := range approvers {
+			if a.MembershipID == claim.SubmitterID {
+				continue
+			}
+			event.To = append(event.To, notify.Recipient{Email: a.Email, Name: displayName(a)})
+		}
+	}
+
+	return event, nil
+}
+
+func displayName(c repo.Contact) string {
+	if c.FullName != nil && *c.FullName != "" {
+		return *c.FullName
+	}
+	// The address is a poor display name but a better one than an empty
+	// string, which renders as "  approved your claim".
+	if at := strings.IndexByte(c.Email, '@'); at > 0 {
+		return c.Email[:at]
+	}
+	return c.Email
 }
 
 // HandleBudgetThreshold raises an alert when an envelope crosses its warning
@@ -112,7 +241,13 @@ func (h *Handlers) HandleBudgetThreshold(ctx context.Context, t *asynq.Task) err
 		return fmt.Errorf("%w: %v", asynq.SkipRetry, err)
 	}
 
-	return h.db.WithTenantTx(ctx, postgres.Binding{TenantID: payload.TenantID, ReadOnly: true},
+	var (
+		breached   []repo.Consumption
+		recipients []notify.Recipient
+		tenantName string
+	)
+
+	err := h.db.WithTenantTx(ctx, postgres.Binding{TenantID: payload.TenantID, ReadOnly: true},
 		func(ctx context.Context, tc *postgres.TenantConn) error {
 			today := time.Now().UTC()
 			envelopes, err := h.budgets.Consumption(ctx, tc, &today)
@@ -133,14 +268,67 @@ func (h *Handlers) HandleBudgetThreshold(ctx context.Context, t *asynq.Task) err
 					slog.String("budget_id", envelope.BudgetID.String()),
 					slog.Int64("usage_bps", envelope.UsageBps()))
 
-				if h.notifier != nil {
-					if err := h.notifier.BudgetThresholdBreached(ctx, payload.TenantID.String(), envelope); err != nil {
-						return err
-					}
-				}
+				breached = append(breached, envelope)
+			}
+
+			if len(breached) == 0 || h.notifier == nil {
+				return nil
+			}
+
+			org, err := h.tenancy.GetTenant(ctx, tc)
+			if err != nil {
+				return err
+			}
+			tenantName = org.Name
+
+			// Finance and the owner, not the whole organisation: a budget
+			// figure is commercially sensitive and most members can do nothing
+			// about it.
+			contacts, err := h.tenancy.Finance(ctx, tc)
+			if err != nil {
+				return err
+			}
+			for _, c := range contacts {
+				recipients = append(recipients, notify.Recipient{Email: c.Email, Name: displayName(c)})
 			}
 			return nil
 		})
+	if err != nil {
+		return err
+	}
+
+	// One message per breached envelope, and sent after the transaction has
+	// committed - a mail relay that takes three seconds must not hold a
+	// database connection for three seconds. A digest would be kinder to an
+	// inbox and would make it impossible to tell which budget an alert is
+	// about from the subject line, which is what somebody triaging reads.
+	for _, envelope := range breached {
+		if h.notifier == nil {
+			break
+		}
+		if err := h.notifier.BudgetThreshold(ctx, notify.BudgetEvent{
+			To:             recipients,
+			TenantName:     tenantName,
+			DepartmentName: derefOr(envelope.DepartmentName, "Organisation-wide"),
+			Budget:         envelope.Budget,
+			Consumed:       envelope.Consumed,
+			Remaining:      envelope.Remaining(),
+			UsageBps:       envelope.UsageBps(),
+			ThresholdBps:   envelope.AlertThresholdBps,
+			PeriodStart:    envelope.PeriodStart,
+			PeriodEnd:      envelope.PeriodEnd,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func derefOr(s *string, fallback string) string {
+	if s == nil || *s == "" {
+		return fallback
+	}
+	return *s
 }
 
 func (h *Handlers) HandleBillingReconcile(ctx context.Context, t *asynq.Task) error {

@@ -163,6 +163,7 @@ type Querier interface {
 	// of a statement_timeout. The 55P03 lock_not_available is translated to
 	// ErrConflict by the repository.
 	GetExpenseForUpdate(ctx context.Context, arg GetExpenseForUpdateParams) (Expense, error)
+	GetMemberContact(ctx context.Context, arg GetMemberContactParams) (GetMemberContactRow, error)
 	GetMembership(ctx context.Context, arg GetMembershipParams) (Membership, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenHash []byte) (RefreshToken, error)
 	GetTenant(ctx context.Context, id uuid.UUID) (Tenant, error)
@@ -182,6 +183,19 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetVendorSubscription(ctx context.Context, arg GetVendorSubscriptionParams) (VendorSubscription, error)
+	// ---------------------------------------------------------------------------
+	// Notification recipients
+	// ---------------------------------------------------------------------------
+	// ListApprovers finds who should be told a claim needs a decision.
+	//
+	// Tenant-wide approvers plus the ones scoped to the claim's own department.
+	// A manager scoped elsewhere is deliberately excluded: telling them about a
+	// claim they cannot act on trains people to ignore the notification, which is
+	// how the ones that matter get missed.
+	//
+	// Suspended and invited memberships are excluded because neither can act, and
+	// soft-deleted users because their address may have been reassigned.
+	ListApprovers(ctx context.Context, arg ListApproversParams) ([]ListApproversRow, error)
 	ListBudgets(ctx context.Context, arg ListBudgetsParams) ([]Budget, error)
 	ListDepartments(ctx context.Context, arg ListDepartmentsParams) ([]Department, error)
 	ListExpenseAttachments(ctx context.Context, arg ListExpenseAttachmentsParams) ([]ExpenseAttachment, error)
@@ -201,6 +215,8 @@ type Querier interface {
 	// has_more. A COUNT(*) over a filtered tenant history would cost more than the
 	// page itself.
 	ListExpenses(ctx context.Context, arg ListExpensesParams) ([]Expense, error)
+	// ListFinance finds who settles payments and watches budgets.
+	ListFinance(ctx context.Context, tenantID uuid.UUID) ([]ListFinanceRow, error)
 	ListMemberships(ctx context.Context, tenantID uuid.UUID) ([]ListMembershipsRow, error)
 	// ListMembershipsForUser powers the tenant switcher. It runs without a tenant
 	// binding - the caller has not chosen one yet - so it is a system transaction

@@ -271,6 +271,44 @@ suite rather than against my own idea of the algorithm.
 
 ---
 
+## Notifications
+
+A submission goes to the people who can decide on it; a decision goes back to
+the person who filed it. Sending both to everybody would be simpler and would
+mean an approver receives a copy of every outcome they already know about,
+which is how a notification becomes something people filter away.
+
+Recipients are resolved from the database inside the transaction that read the
+claim — a manager scoped to another department is deliberately excluded, because
+telling someone about a claim they cannot act on trains them to ignore the next
+one. Sending happens **after** that transaction commits: a mail relay that takes
+three seconds must not hold a database connection for three seconds.
+
+Both a text and an HTML part, always. The HTML uses `html/template`, not
+`text/template`, and that is the whole escaping story — a merchant named
+`<img src=x onerror=...>` reaches the body unchanged from the database.
+
+The message itself is assembled by hand (headers, multipart boundaries,
+quoted-printable) because the parts that matter are the ones a library hides:
+header folding, encoding a non-ASCII subject, and the fact that every header
+value derives from tenant data. So it is verified against a real SMTP server
+that parses mail for a living:
+
+```
+--- PASS: TestMessagesArriveAndParse/a_non-ASCII_subject_decodes_back_to_what_was_written
+--- PASS: TestMessagesArriveAndParse/long_html_lines_survive_the_transfer_encoding
+```
+
+Plaintext SMTP is refused off the loopback interface, and refused outright when
+credentials are set — SMTP AUTH over an unencrypted connection sends the
+password base64-encoded, which is not encoding anything.
+
+With no `SMTP_HOST`, the worker logs what it would have sent. Deliberately not a
+silent discard: an operator can then tell "mail is not configured" from "the
+notification code is broken".
+
+---
+
 ## The API contract
 
 [`api/openapi.json`](api/openapi.json) — OpenAPI 3.1, 47 operations.

@@ -28,6 +28,7 @@ type Config struct {
 	JWT      JWTConfig
 	Gateway  GatewayConfig
 	Storage  StorageConfig
+	Mail     MailConfig
 	Log      LogConfig
 }
 
@@ -103,6 +104,33 @@ type StorageConfig struct {
 	// it.
 	UploadTTL   time.Duration
 	DownloadTTL time.Duration
+
+	Enabled bool
+}
+
+// MailConfig is the outbound relay.
+//
+// A single From address for the whole service rather than one per tenant:
+// sending as a customer's own domain needs their SPF and DKIM records, and
+// forging it without them is how a service ends up on a blocklist.
+type MailConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	FromName string
+	FromAddr string
+
+	// TLS is starttls, implicit or none. Plaintext is refused off loopback,
+	// and refused outright when credentials are set - SMTP AUTH over an
+	// unencrypted connection sends the password base64-encoded, which is not
+	// encoding anything.
+	TLS string
+
+	// DashboardURL is the base for the links in a message. Empty omits them
+	// rather than producing "/expenses/..." which resolves to nothing in a
+	// mail client.
+	DashboardURL string
 
 	Enabled bool
 }
@@ -183,6 +211,17 @@ func Load() (*Config, error) {
 			DownloadTTL: duration("STORAGE_DOWNLOAD_TTL", 10*time.Minute, &problems),
 		},
 
+		Mail: MailConfig{
+			Host:         os.Getenv("SMTP_HOST"),
+			Port:         integer("SMTP_PORT", 587, &problems),
+			Username:     os.Getenv("SMTP_USERNAME"),
+			Password:     os.Getenv("SMTP_PASSWORD"),
+			FromName:     env("SMTP_FROM_NAME", "Expense Tracker"),
+			FromAddr:     os.Getenv("SMTP_FROM_ADDRESS"),
+			TLS:          env("SMTP_TLS", "starttls"),
+			DashboardURL: os.Getenv("DASHBOARD_URL"),
+		},
+
 		Log: LogConfig{
 			Level:  logger.ParseLevel(env("LOG_LEVEL", "info")),
 			Format: logger.Format(env("LOG_FORMAT", "json")),
@@ -191,6 +230,21 @@ func Load() (*Config, error) {
 
 	cfg.Gateway.Enabled = cfg.Gateway.BaseURL != ""
 	cfg.Storage.Enabled = cfg.Storage.Endpoint != ""
+	cfg.Mail.Enabled = cfg.Mail.Host != ""
+
+	if cfg.Mail.Enabled {
+		if cfg.Mail.FromAddr == "" {
+			problems = append(problems, "SMTP_FROM_ADDRESS is required when SMTP_HOST is set")
+		}
+		switch cfg.Mail.TLS {
+		case "starttls", "implicit", "none":
+		default:
+			problems = append(problems, "SMTP_TLS must be starttls, implicit or none")
+		}
+		if cfg.IsProduction() && cfg.Mail.TLS == "none" {
+			problems = append(problems, "SMTP_TLS must not be none in production")
+		}
+	}
 
 	if cfg.Storage.Enabled {
 		if cfg.Storage.AccessKey == "" || cfg.Storage.SecretKey == "" {

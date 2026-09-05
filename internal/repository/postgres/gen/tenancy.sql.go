@@ -184,6 +184,30 @@ func (q *Queries) DeleteExpiredRefreshTokens(ctx context.Context, grace pgtype.I
 	return result.RowsAffected(), nil
 }
 
+const getMemberContact = `-- name: GetMemberContact :one
+SELECT u.email, u.full_name
+  FROM memberships m
+  JOIN users u ON u.id = m.user_id
+ WHERE m.tenant_id = $1 AND m.id = $2 AND u.deleted_at IS NULL
+`
+
+type GetMemberContactParams struct {
+	TenantID uuid.UUID
+	ID       uuid.UUID
+}
+
+type GetMemberContactRow struct {
+	Email    string
+	FullName *string
+}
+
+func (q *Queries) GetMemberContact(ctx context.Context, arg GetMemberContactParams) (GetMemberContactRow, error) {
+	row := q.db.QueryRow(ctx, getMemberContact, arg.TenantID, arg.ID)
+	var i GetMemberContactRow
+	err := row.Scan(&i.Email, &i.FullName)
+	return i, err
+}
+
 const getMembership = `-- name: GetMembership :one
 SELECT id, tenant_id, user_id, role, status, approval_limit_minor, department_id, invited_by, created_at, updated_at FROM memberships WHERE tenant_id = $1 AND id = $2
 `
@@ -311,6 +335,114 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.DeletedAt,
 	)
 	return i, err
+}
+
+const listApprovers = `-- name: ListApprovers :many
+
+SELECT u.email, u.full_name, m.id AS membership_id, m.role
+  FROM memberships m
+  JOIN users u ON u.id = m.user_id
+ WHERE m.tenant_id = $1
+   AND m.status = 'active'
+   AND u.deleted_at IS NULL
+   AND m.role IN ('owner', 'admin', 'manager')
+   AND (m.department_id IS NULL
+        OR $2::uuid IS NULL
+        OR m.department_id = $2)
+ ORDER BY u.email
+`
+
+type ListApproversParams struct {
+	TenantID     uuid.UUID
+	DepartmentID *uuid.UUID
+}
+
+type ListApproversRow struct {
+	Email        string
+	FullName     *string
+	MembershipID uuid.UUID
+	Role         MembershipRole
+}
+
+// ---------------------------------------------------------------------------
+// Notification recipients
+// ---------------------------------------------------------------------------
+// ListApprovers finds who should be told a claim needs a decision.
+//
+// Tenant-wide approvers plus the ones scoped to the claim's own department.
+// A manager scoped elsewhere is deliberately excluded: telling them about a
+// claim they cannot act on trains people to ignore the notification, which is
+// how the ones that matter get missed.
+//
+// Suspended and invited memberships are excluded because neither can act, and
+// soft-deleted users because their address may have been reassigned.
+func (q *Queries) ListApprovers(ctx context.Context, arg ListApproversParams) ([]ListApproversRow, error) {
+	rows, err := q.db.Query(ctx, listApprovers, arg.TenantID, arg.DepartmentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListApproversRow{}
+	for rows.Next() {
+		var i ListApproversRow
+		if err := rows.Scan(
+			&i.Email,
+			&i.FullName,
+			&i.MembershipID,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFinance = `-- name: ListFinance :many
+SELECT u.email, u.full_name, m.id AS membership_id, m.role
+  FROM memberships m
+  JOIN users u ON u.id = m.user_id
+ WHERE m.tenant_id = $1
+   AND m.status = 'active'
+   AND u.deleted_at IS NULL
+   AND m.role IN ('owner', 'finance')
+ ORDER BY u.email
+`
+
+type ListFinanceRow struct {
+	Email        string
+	FullName     *string
+	MembershipID uuid.UUID
+	Role         MembershipRole
+}
+
+// ListFinance finds who settles payments and watches budgets.
+func (q *Queries) ListFinance(ctx context.Context, tenantID uuid.UUID) ([]ListFinanceRow, error) {
+	rows, err := q.db.Query(ctx, listFinance, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFinanceRow{}
+	for rows.Next() {
+		var i ListFinanceRow
+		if err := rows.Scan(
+			&i.Email,
+			&i.FullName,
+			&i.MembershipID,
+			&i.Role,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listMemberships = `-- name: ListMemberships :many

@@ -89,6 +89,25 @@ services:
         echo "bucket ready"
     restart: "no"
 
+  # A mail catcher, not a relay. Everything the worker sends lands here and
+  # goes no further, which is the point: a development database full of real
+  # addresses would otherwise send real people real notifications.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: bet-mailpit
+    ports:
+      - "127.0.0.1:1026:1025"   # SMTP
+      - "127.0.0.1:8026:8025"   # web UI
+    environment:
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   bet-pgdata:
   bet-redisdata:

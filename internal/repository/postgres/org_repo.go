@@ -50,6 +50,16 @@ func (r *OrgRepository) ListDepartments(ctx context.Context, tc *postgres.Tenant
 	return out, nil
 }
 
+// GetDepartment loads one department. Removed once as dead code and restored
+// here: the notification path needs the name to put in an email.
+func (r *OrgRepository) GetDepartment(ctx context.Context, tc *postgres.TenantConn, id uuid.UUID) (*org.Department, error) {
+	row, err := gen.New(tc).GetDepartment(ctx, gen.GetDepartmentParams{TenantID: tc.TenantID(), ID: id})
+	if err != nil {
+		return nil, translate(err)
+	}
+	return toDomainDepartment(row), nil
+}
+
 func (r *OrgRepository) UpdateDepartment(ctx context.Context, tc *postgres.TenantConn, id uuid.UUID, d org.DepartmentDraft) (*org.Department, error) {
 	row, err := gen.New(tc).UpdateDepartment(ctx, gen.UpdateDepartmentParams{
 		TenantID:   tc.TenantID(),

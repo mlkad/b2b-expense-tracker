@@ -29,6 +29,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"testing"
@@ -71,6 +72,13 @@ var (
 	// server that actually checks signatures - a unit test asserting the
 	// signature equals what this code produces would prove nothing at all.
 	objectStore storage.Store
+
+	// mailpit is a real SMTP server with an HTTP API to read what arrived.
+	// The message building is hand-written - headers, multipart boundaries,
+	// quoted-printable - so it is checked against something that parses mail
+	// for a living rather than against my own reading of the RFCs.
+	mailSMTP string
+	mailAPI  string
 )
 
 func TestMain(m *testing.M) {
@@ -80,6 +88,44 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	os.Exit(code)
+}
+
+// startMailServer brings up Mailpit: an SMTP server on 1025 and an HTTP API on
+// 8025 for reading what it received.
+func startMailServer(ctx context.Context) error {
+	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image:        "axllent/mailpit:latest",
+			ExposedPorts: []string{"1025/tcp", "8025/tcp"},
+			WaitingFor:   wait.ForListeningPort("8025/tcp").WithStartupTimeout(60 * time.Second),
+		},
+		Started: true,
+	})
+	if err != nil {
+		return fmt.Errorf("start mailpit: %w", err)
+	}
+	cleanups = append(cleanups, func() {
+		if err := testcontainers.TerminateContainer(container); err != nil {
+			fmt.Fprintf(os.Stderr, "integration: terminate mailpit: %v\n", err)
+		}
+	})
+
+	host, err := container.Host(ctx)
+	if err != nil {
+		return err
+	}
+	smtpPort, err := container.MappedPort(ctx, "1025")
+	if err != nil {
+		return err
+	}
+	apiPort, err := container.MappedPort(ctx, "8025")
+	if err != nil {
+		return err
+	}
+
+	mailSMTP = net.JoinHostPort(host, smtpPort.Port())
+	mailAPI = "http://" + net.JoinHostPort(host, apiPort.Port())
+	return nil
 }
 
 // startObjectStore brings up MinIO and creates the bucket.
@@ -216,6 +262,9 @@ func runSuite(m *testing.M) (int, error) {
 	appDSN = swapCredentials(appDSN, appUser, appPassword)
 
 	if err := startObjectStore(ctx); err != nil {
+		return 1, err
+	}
+	if err := startMailServer(ctx); err != nil {
 		return 1, err
 	}
 
