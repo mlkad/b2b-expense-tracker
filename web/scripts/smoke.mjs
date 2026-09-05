@@ -30,7 +30,13 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 
 const problems = [];
 page.on("pageerror", (e) => problems.push(`uncaught: ${e.message}`));
-page.on("requestfailed", (r) => problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`));
+page.on("requestfailed", (r) => {
+  // A navigation the browser converts into a download is reported as aborted:
+  // the page never navigates, the download manager takes over. That is the
+  // export working, not failing.
+  if (r.url().includes("/reports/expenses/export?")) return;
+  problems.push(`request failed: ${r.url()} ${r.failure()?.errorText}`);
+});
 /**
  * Responses this script provokes on purpose.
  *
@@ -109,9 +115,25 @@ check(
 await page.getByRole("button", { name: "Clear" }).click();
 await page.locator("tbody tr").first().waitFor({ timeout: 10000 });
 
+// --- Exports ----------------------------------------------------------------
+//
+// A browser navigation carries no Authorization header, so the export link has
+// to be signed. Before it was, these buttons produced nothing but a 401 page.
+
+const download = page.waitForEvent("download", { timeout: 20000 });
+await page.getByRole("button", { name: "CSV" }).click();
+const file = await download;
+check(
+  /^expenses-\d{4}-\d{2}-\d{2}\.csv$/.test(file.suggestedFilename()),
+  `the CSV export downloaded as ${file.suggestedFilename()}`,
+);
+
 // --- One claim --------------------------------------------------------------
 
-await page.locator("tbody tr a").first().click();
+// A draft specifically, not simply the first row. Previous runs leave
+// submitted claims in the list, and picking whatever is newest makes the
+// transition assertions depend on how many times this has been run before.
+await page.locator("tbody tr", { hasText: "Draft" }).first().locator("a").click();
 await page.getByRole("heading", { name: "History" }).waitFor({ timeout: 10000 });
 await page.screenshot({ path: `${out}/04-claim.png`, fullPage: true });
 

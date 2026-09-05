@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { ApiError } from "../api/client";
 import { Link } from "react-router";
 
 import type { Department, Expense, ExpenseCategory, ExpenseStatus, Page } from "../api/types";
@@ -77,20 +79,26 @@ export function Expenses() {
     setApplied(EMPTY);
   }, [reset]);
 
-  const exportUrl = (format: string) => {
-    const params = new URLSearchParams({ format });
-    for (const [key, value] of Object.entries(applied)) {
-      if (value && key !== "q") params.set(key, value);
-    }
-    return api.url(`/reports/expenses/export?${params.toString()}`);
-  };
+  const exportQuery = useCallback(
+    (format: string) => {
+      const params = new URLSearchParams({ format });
+      for (const [key, value] of Object.entries(applied)) {
+        // The free-text search is not an export filter on the server, so
+        // including it would produce a signature for a query the export route
+        // does not accept.
+        if (value && key !== "q") params.set(key, value);
+      }
+      return params.toString();
+    },
+    [applied],
+  );
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">Expenses</h1>
         <div className="flex gap-2">
-          {can("report:export") && <ExportMenu urlFor={exportUrl} />}
+          {can("report:export") && <ExportMenu queryFor={exportQuery} />}
           <Link
             to="/expenses/new"
             className="inline-flex items-center rounded-md bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700"
@@ -237,33 +245,63 @@ export function Expenses() {
 }
 
 /**
- * Exports are plain links, not fetch calls.
+ * Exports are a signed link the browser navigates to, obtained on click.
  *
- * A streamed report can be tens of megabytes; fetching it into a Blob to
- * trigger a download would hold the whole thing in the tab's memory, which is
- * the cost the server went to some trouble to avoid. Letting the browser
- * navigate hands it to the download manager instead, which streams to disk.
+ * Not a fetch: a streamed report can be tens of megabytes, and pulling it into
+ * a Blob to trigger a download would hold the whole thing in the tab - the cost
+ * the server went to some trouble to avoid. Letting the browser navigate hands
+ * it to the download manager, which streams to disk.
  *
- * The consequence is that the request carries no Authorization header - a
- * navigation cannot set one - so these rely on the session cookie. That is a
- * real limitation and it is why the links are marked as needing a signed-in
- * session rather than being shareable.
+ * But a navigation cannot carry an Authorization header, so a plain <a> to the
+ * export route arrives with no credential at all and is refused. An earlier
+ * version of this component did exactly that, and the buttons did nothing but
+ * produce a 401 page.
+ *
+ * So the click first asks the API for a link signed for this exact query. The
+ * token lives a minute and is bound to the filters, which is what stops it
+ * being edited in the address bar into a report of the whole organisation.
  */
-function ExportMenu({ urlFor }: { urlFor: (format: string) => string }) {
+function ExportMenu({ queryFor }: { queryFor: (format: string) => string }) {
+  const { api } = useSession();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+
+  async function download(format: string) {
+    setBusy(format);
+    setFailed(null);
+    try {
+      const ticket = await api.get<{ url: string }>(
+        `/reports/expenses/export/token?${queryFor(format)}`,
+      );
+      // Assigning location rather than opening a window: a popup blocker stops
+      // window.open from a promise callback, because by then the click is no
+      // longer what is driving it. The response is an attachment, so the page
+      // does not actually navigate away.
+      window.location.assign(ticket.url);
+    } catch (err) {
+      setFailed(
+        err instanceof ApiError && err.isPlanLimit
+          ? "That export is larger than your plan allows."
+          : "Could not prepare the download.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="flex items-center gap-1 rounded-md border border-ink-200 bg-white px-2 py-1">
-      <span className="px-1 text-xs text-ink-600">Export</span>
+      <span className="px-1 text-xs text-ink-600">{failed ?? "Export"}</span>
       {["csv", "xlsx", "pdf"].map((format) => (
-        <a
+        <button
           key={format}
-          href={urlFor(format)}
-          className="rounded px-2 py-1 text-xs font-medium uppercase text-brand-600 hover:bg-ink-50"
-          // download is advisory: the server's Content-Disposition names the
-          // file, and this only tells the browser not to try rendering it.
-          download
+          type="button"
+          disabled={busy !== null}
+          onClick={() => void download(format)}
+          className="rounded px-2 py-1 text-xs font-medium uppercase text-brand-600 hover:bg-ink-50 disabled:text-ink-400"
         >
-          {format}
-        </a>
+          {busy === format ? "…" : format}
+        </button>
       ))}
     </div>
   );

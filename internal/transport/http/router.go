@@ -30,6 +30,7 @@ type RouterConfig struct {
 
 	CORS           middleware.CORSConfig
 	Tokens         middleware.TokenParser
+	DownloadTokens middleware.DownloadTokenParser
 	AuthRateLimit  *middleware.RateLimiter
 	WriteRateLimit *middleware.RateLimiter
 	TrustedProxies int
@@ -153,6 +154,10 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 			r.Get("/expenses/pending", h.Expenses.PendingQueue)
 			r.Get("/expenses/{id}", h.Expenses.Get)
 			r.Get("/expenses/{id}/history", h.Expenses.History)
+			// Mints the signed link the export route below accepts. It needs a
+			// bearer token like any other endpoint; the link it returns does
+			// not, which is the whole point.
+			r.Get("/reports/expenses/export/token", h.Exports.IssueDownloadToken)
 			r.Get("/expenses/{id}/attachments", h.Files.List)
 			// A redirect to a signed URL rather than a proxied download: the
 			// bytes never come through this service.
@@ -229,9 +234,14 @@ func NewRouter(h Handlers, cfg RouterConfig, log *slog.Logger) http.Handler {
 		// Exports get their own group so the long deadline applies to nothing
 		// else. The handler reads its own deadline from the same value, so the
 		// socket write deadline and the context deadline cannot disagree.
+		//
+		// The export accepts either a bearer token or a signed download link. A
+		// browser navigating to a download cannot set an Authorization header,
+		// and fetching the report to a Blob instead would hold it all in the
+		// tab - the cost the streaming design exists to avoid.
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Timeout(cfg.ExportTimeout))
-			r.Use(middleware.RequireAuth(cfg.Tokens, log))
+			r.Use(middleware.AllowBearerOrDownloadToken(cfg.Tokens, cfg.DownloadTokens, log))
 			r.Get("/reports/expenses/export", h.Exports.HandleExport)
 		})
 	})

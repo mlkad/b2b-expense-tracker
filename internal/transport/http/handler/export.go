@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mlkad/b2b-expense-tracker/internal/auth"
 	"github.com/mlkad/b2b-expense-tracker/internal/export"
 	"github.com/mlkad/b2b-expense-tracker/internal/logger"
 	"github.com/mlkad/b2b-expense-tracker/internal/service"
@@ -17,7 +18,8 @@ import (
 )
 
 type ExportHandler struct {
-	reports *service.ReportService
+	reports   *service.ReportService
+	downloads *auth.DownloadTokens
 
 	// deadline bounds one export. It is much longer than the API timeout
 	// because a large report legitimately takes minutes, and it is applied
@@ -25,11 +27,11 @@ type ExportHandler struct {
 	deadline time.Duration
 }
 
-func NewExportHandler(reports *service.ReportService, deadline time.Duration) *ExportHandler {
+func NewExportHandler(reports *service.ReportService, downloads *auth.DownloadTokens, deadline time.Duration) *ExportHandler {
 	if deadline <= 0 {
 		deadline = 10 * time.Minute
 	}
-	return &ExportHandler{reports: reports, deadline: deadline}
+	return &ExportHandler{reports: reports, downloads: downloads, deadline: deadline}
 }
 
 // flushInterval is how often buffered bytes are pushed to the client.
@@ -218,3 +220,55 @@ func isClientGone(err error) bool {
 // router reads it rather than repeating the number, so the write deadline set
 // on the socket above and the context deadline cannot disagree.
 func (h *ExportHandler) Deadline() time.Duration { return h.deadline }
+
+// downloadTicket is a signed URL for one report.
+type downloadTicket struct {
+	URL       string    `json:"url"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// IssueDownloadToken mints a link the browser can navigate to.
+//
+// Two steps rather than one, for the same reason receipts take two: a browser
+// navigation cannot carry an Authorization header, and fetching the report with
+// one instead would mean holding a report that may be tens of megabytes in the
+// tab's memory - which is the cost the streaming export was built to avoid.
+//
+// The token is bound to the exact query it was minted for, so the filters
+// cannot be widened afterwards, and it lives for a minute because a query
+// string is written down by every access log it passes through.
+func (h *ExportHandler) IssueDownloadToken(w http.ResponseWriter, r *http.Request) {
+	subject := middleware.MustSubject(r)
+
+	q := newQueryReader(r)
+	if _, err := export.ParseFormat(q.raw("format")); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	// Parsed and discarded: the point is to reject a malformed filter now,
+	// while an error can still be a JSON response, rather than after the
+	// browser has navigated to a URL that will fail mid-stream.
+	_ = q.filter()
+	if err := q.err(); err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	query := r.URL.Query()
+	query.Del(middleware.DownloadQueryParam)
+	canonical := query.Encode()
+
+	token, expiresAt, err := h.downloads.Issue(subject, canonical)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	signed := query
+	signed.Set(middleware.DownloadQueryParam, token)
+
+	writeJSON(w, http.StatusOK, downloadTicket{
+		URL:       "/api/v1/reports/expenses/export?" + signed.Encode(),
+		ExpiresAt: expiresAt,
+	})
+}

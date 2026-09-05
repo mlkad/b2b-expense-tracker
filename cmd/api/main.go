@@ -139,6 +139,11 @@ func run() error {
 		return fmt.Errorf("tokens: %w", err)
 	}
 
+	downloadTokens, err := auth.NewDownloadTokens(cfg.JWT.Secret, cfg.JWT.Issuer)
+	if err != nil {
+		return fmt.Errorf("download tokens: %w", err)
+	}
+
 	var (
 		gatewayClient *gateway.Client
 		relay         *gateway.Relay
@@ -228,7 +233,7 @@ func run() error {
 	handlers := transport.Handlers{
 		Auth:     handler.NewAuthHandler(authService, cfg.HTTP.TrustedProxies, cfg.HTTP.SecureCookies),
 		Expenses: handler.NewExpenseHandler(expenseService),
-		Exports:  handler.NewExportHandler(reportService, cfg.HTTP.ExportTimeout),
+		Exports:  handler.NewExportHandler(reportService, downloadTokens, cfg.HTTP.ExportTimeout),
 		Billing:  handler.NewBillingHandler(billingService, relay, log),
 		Org:      handler.NewOrgHandler(orgService),
 		Files:    handler.NewAttachmentHandler(fileService),
@@ -244,6 +249,7 @@ func run() error {
 			AllowedOrigins: cfg.HTTP.CORSOrigins,
 		},
 		Tokens:         tokens,
+		DownloadTokens: downloadTokens,
 		AuthRateLimit:  authLimiter,
 		WriteRateLimit: writeLimiter,
 		TrustedProxies: cfg.HTTP.TrustedProxies,

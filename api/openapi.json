@@ -1956,7 +1956,7 @@
         ],
         "summary": "Stream an expense report as CSV, XLSX or PDF",
         "operationId": "getReportsExpensesExport",
-        "description": "Nothing is buffered: the response is chunked and produced as the rows are read. A failure after the first byte cannot be a status code, so it becomes a deliberately aborted connection - a truncated download rather than a complete-looking file missing half the year.",
+        "description": "Streams the report. Nothing is buffered: rows are encoded and written as they are read.\\n\\nAuthorised by either a bearer token or the `token` query parameter from `/reports/expenses/export/token`. The signed token exists because a browser navigating to a download cannot set a header, and it is bound to the exact query it was issued for.",
         "parameters": [
           {
             "name": "format",
@@ -1982,6 +1982,15 @@
           },
           {
             "$ref": "#/components/parameters/FilterTo"
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "A signed download token, when no bearer token is presented."
           }
         ],
         "responses": {
@@ -2029,6 +2038,47 @@
           },
           "413": {
             "description": "The range exceeds the synchronous row limit for this plan."
+          }
+        }
+      }
+    },
+    "/api/v1/reports/expenses/export/token": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Mint a signed link for an export",
+        "description": "A browser navigating to a download cannot set an Authorization header, so the export route cannot be reached by a plain link carrying only a bearer token.\\n\\nThis endpoint, which does require a bearer token, returns a URL with a signed token in it. The token lives one minute and is bound to the exact query it was minted for - the export reads its filters from the URL, so anything not covered by the signature would be a parameter the holder could widen.\\n\\nThe alternative, fetching the report with a header and turning it into a Blob, would hold a report of tens of megabytes in the tab's memory - which is the cost the streaming export exists to avoid.",
+        "operationId": "getExportToken",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "A signed URL and its expiry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "url": {
+                      "type": "string"
+                    },
+                    "expires_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Invalid"
           }
         }
       }

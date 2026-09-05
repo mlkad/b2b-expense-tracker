@@ -132,6 +132,24 @@ stream unconsumed keeps the connection open until collection, and the browser
 reports the finished request as aborted — which shows up in a network log as a
 failed upload that plainly succeeded.
 
+## Exports are a signed link, not a plain one
+
+A browser navigating to a download **cannot set an Authorization header**. An
+earlier version of this used a plain `<a href>` to the export route, and the
+buttons did nothing but produce a 401 page — the refresh cookie is path-scoped
+to `/api/v1/auth` and never reaches `/reports`, so the request arrived with no
+credential at all.
+
+Fetching the report with a header instead and turning it into a Blob would hold
+tens of megabytes in the tab, which is the cost the streaming export exists to
+avoid. So the click asks the API for a link signed for that exact query, and
+navigates to it — the same shape as a presigned receipt URL.
+
+The token lives one minute and is bound to the query string, because a URL is
+written down by every access log it passes through, and because the export
+reads its filters from the URL: anything the signature did not cover would be a
+parameter the holder could widen in the address bar.
+
 ## What is here
 
 All of it: sign-in, the shell, the overview, the expense list with filters and
@@ -151,6 +169,9 @@ unit tests could not:
 3. **The API mixed `snake_case` and `PascalCase` in one object** — handlers were
    returning repository structs whose embedded fields carried JSON tags while
    the added ones did not. Fixed with DTOs on the server.
+4. **The export buttons were entirely broken** — a navigation carries no
+   Authorization header, so every download returned 401. Fixed with signed,
+   query-bound download links.
 
 It is also idempotent: it creates a department of its own each run, because a
 script that only passes against a fresh database is a script nobody runs twice.

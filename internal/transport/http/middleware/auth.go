@@ -77,3 +77,68 @@ func unauthorized(w http.ResponseWriter, detail string) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="api", error="invalid_token"`)
 	writeProblem(w, http.StatusUnauthorized, detail)
 }
+
+// DownloadTokenParser is the slice of auth.DownloadTokens this needs.
+type DownloadTokenParser interface {
+	Parse(token, query string) (auth.Subject, error)
+}
+
+// DownloadQueryParam is where a signed download token travels.
+const DownloadQueryParam = "token"
+
+// AllowBearerOrDownloadToken authenticates a download.
+//
+// A browser navigating to a link cannot set an Authorization header, so an
+// export link carrying only a bearer token does not work at all - it arrives
+// with no credential and is refused. Fetching the report with a header instead
+// and turning it into a Blob would hold the whole thing in the tab, which is
+// the cost the streaming export exists to avoid.
+//
+// So a download is authorised the way the receipt store authorises one: with a
+// signed URL. The token is minted by an authenticated request, lives for a
+// minute, and is bound to the exact query string it was issued for - the export
+// reads its filters from the URL, so anything not covered by the signature is a
+// parameter the holder could change.
+//
+// A bearer token is still accepted, because it is what an API client would use.
+func AllowBearerOrDownloadToken(
+	bearers TokenParser,
+	downloads DownloadTokenParser,
+	log *slog.Logger,
+) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if raw, ok := bearerToken(r); ok {
+				subject, err := bearers.Parse(raw)
+				if err != nil {
+					unauthorized(w, "invalid or expired token")
+					return
+				}
+				next.ServeHTTP(w, r.WithContext(WithSubject(r.Context(), subject)))
+				return
+			}
+
+			query := r.URL.Query()
+			raw := query.Get(DownloadQueryParam)
+			if raw == "" {
+				unauthorized(w, "missing bearer token")
+				return
+			}
+
+			// The token is removed before the signed query is reconstructed,
+			// because it cannot be part of what it signs.
+			query.Del(DownloadQueryParam)
+
+			subject, err := downloads.Parse(raw, query.Encode())
+			if err != nil {
+				log.DebugContext(r.Context(), "download token rejected",
+					slog.String("reason", err.Error()),
+					slog.String("remote_addr", ClientIP(r)))
+				unauthorized(w, "invalid or expired download link")
+				return
+			}
+
+			next.ServeHTTP(w, r.WithContext(WithSubject(r.Context(), subject)))
+		})
+	}
+}
