@@ -118,16 +118,16 @@ export function OverviewPage() {
 
           <Card>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[30rem] text-sm">
+              <table className="w-full min-w-[30rem] text-[13px]">
                 <caption className="sr-only">Committed spend by department</caption>
                 <TableHead>
-                  <th scope="col" className="py-3 pr-4 pl-5 font-medium">
+                  <th scope="col" className="py-2 pr-3 pl-4 font-medium">
                     Department
                   </th>
-                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                  <th scope="col" className="px-3 py-2 text-right font-medium">
                     Claims
                   </th>
-                  <th scope="col" className="px-4 py-3 pr-5 text-right font-medium">
+                  <th scope="col" className="px-3 py-2 pr-4 text-right font-medium">
                     Total
                   </th>
                 </TableHead>
@@ -137,13 +137,13 @@ export function OverviewPage() {
                       key={row.department_id ?? "unassigned"}
                       className="transition-colors hover:bg-surface/70"
                     >
-                      <td className="py-3.5 pr-4 pl-5">{row.department_name}</td>
-                      <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                      <td className="py-1.5 pr-3 pl-4">{row.department_name}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-muted">
                         {row.claim_count}
                       </td>
                       {/* tabular-nums so a column of figures lines up on the
                           decimal point rather than wandering by glyph width. */}
-                      <td className="px-4 py-3.5 pr-5 text-right font-medium tabular-nums">
+                      <td className="px-3 py-1.5 pr-4 text-right font-medium tabular-nums">
                         {formatMoney(row.total)}
                       </td>
                     </tr>

@@ -28,12 +28,12 @@ export function ExpenseTable({
     // The wrapper scrolls, not the page. A table that pushes the body wider
     // makes every other column on the screen scroll sideways with it.
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[36rem] text-sm">
+      <table className="w-full min-w-[36rem] text-[13px]">
         <caption className="sr-only">
           {queue ? "Claims awaiting a decision" : "Expense claims"}
         </caption>
         <TableHead>
-          <th scope="col" className="py-3 pr-4 pl-5 font-medium">
+          <th scope="col" className="py-2 pr-3 pl-4 font-medium">
             <span className="inline-flex items-center gap-1">
               {queue ? "Submitted" : "Date"}
               {/* The queue is ordered oldest first and cannot be reordered, so
@@ -42,31 +42,31 @@ export function ExpenseTable({
               {queue ? <ArrowUpIcon className="size-3" /> : null}
             </span>
           </th>
-          <th scope="col" className="px-4 py-3 font-medium">
+          <th scope="col" className="px-3 py-2 font-medium">
             Merchant
           </th>
-          <th scope="col" className="px-4 py-3 font-medium">
+          <th scope="col" className="px-3 py-2 font-medium">
             {queue ? "Spent on" : "Category"}
           </th>
           {!queue && (
-            <th scope="col" className="px-4 py-3 font-medium">
+            <th scope="col" className="px-3 py-2 font-medium">
               Status
             </th>
           )}
-          <th scope="col" className="px-4 py-3 text-right font-medium">
+          <th scope="col" className="px-3 py-2 text-right font-medium">
             Amount
           </th>
-          <th scope="col" className="w-12 py-3 pr-4 pl-2">
+          <th scope="col" className="w-10 py-2 pr-3 pl-1">
             <span className="sr-only">Actions</span>
           </th>
         </TableHead>
         <tbody className="divide-y divide-line-soft">
           {claims.map((claim) => (
             <tr key={claim.id} className="group transition-colors hover:bg-surface/70">
-              <td className="py-3.5 pr-4 pl-5 whitespace-nowrap text-muted">
+              <td className="py-1.5 pr-3 pl-4 whitespace-nowrap text-muted">
                 {queue ? formatTimestamp(claim.submitted_at) : formatDate(claim.spent_at)}
               </td>
-              <td className="px-4 py-3.5">
+              <td className="px-3 py-1.5">
                 <span className="flex items-center gap-2.5">
                   <Monogram name={claim.merchant} />
                   {/* The whole row is not a link: a row-level click target
@@ -85,18 +85,18 @@ export function ExpenseTable({
                   )}
                 </span>
               </td>
-              <td className="px-4 py-3.5 text-muted">
+              <td className="px-3 py-1.5 text-muted">
                 {queue ? formatDate(claim.spent_at) : claim.category}
               </td>
               {!queue && (
-                <td className="px-4 py-3.5">
+                <td className="px-3 py-1.5">
                   <StatusBadge status={claim.status} />
                 </td>
               )}
-              <td className="px-4 py-3.5 text-right font-medium tabular-nums">
+              <td className="px-3 py-1.5 text-right font-medium tabular-nums">
                 {formatMoney(claim.amount)}
               </td>
-              <td className="py-3.5 pr-4 pl-2 text-right">
+              <td className="py-1.5 pr-3 pl-1 text-right">
                 {/* Opens the claim, where the actions the server allows are
                     listed. It is not a menu of its own: a second copy of the
                     transition rules, one row high, is the surest way to offer a

@@ -48,22 +48,22 @@ export function MembersPanel({
           <EmptyState title="Nobody else yet" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[42rem] text-sm">
+            <table className="w-full min-w-[42rem] text-[13px]">
               <caption className="sr-only">Members of this organisation</caption>
               <TableHead>
-                <th scope="col" className="py-3 pr-4 pl-5 font-medium">Person</th>
-                <th scope="col" className="px-4 py-3 font-medium">Role</th>
-                <th scope="col" className="px-4 py-3 font-medium">Department</th>
-                <th scope="col" className="px-4 py-3 font-medium">Status</th>
-                <th scope="col" className="px-4 py-3 text-right font-medium">Approval limit</th>
-                <th scope="col" className="w-12 py-3 pr-4 pl-2">
+                <th scope="col" className="py-2 pr-3 pl-4 font-medium">Person</th>
+                <th scope="col" className="px-3 py-2 font-medium">Role</th>
+                <th scope="col" className="px-3 py-2 font-medium">Department</th>
+                <th scope="col" className="px-3 py-2 font-medium">Status</th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">Approval limit</th>
+                <th scope="col" className="w-10 py-2 pr-3 pl-1">
                   <span className="sr-only">Actions</span>
                 </th>
               </TableHead>
               <tbody className="divide-y divide-line-soft">
                 {(members.data ?? []).map((member) => (
                   <tr key={member.id} className="transition-colors hover:bg-surface/70">
-                    <td className="py-3.5 pr-4 pl-5">
+                    <td className="py-1.5 pr-3 pl-4">
                       <span className="flex items-center gap-2.5">
                         <Monogram name={member.full_name || member.email} />
                         <span>
@@ -77,14 +77,14 @@ export function MembersPanel({
                         </span>
                       </span>
                     </td>
-                    <td className="px-4 py-3.5">
+                    <td className="px-3 py-1.5">
                       <Badge tone="brand">{member.role}</Badge>
                     </td>
-                    <td className="px-4 py-3.5 text-muted">{member.department_name ?? "—"}</td>
-                    <td className="px-4 py-3.5">
+                    <td className="px-3 py-1.5 text-muted">{member.department_name ?? "—"}</td>
+                    <td className="px-3 py-1.5">
                       <Badge tone={statusTone(member.status)}>{member.status}</Badge>
                     </td>
-                    <td className="px-4 py-3.5 text-right tabular-nums text-muted">
+                    <td className="px-3 py-1.5 text-right tabular-nums text-muted">
                       {member.approval_limit_minor == null
                         ? "role default"
                         : formatMinor(
@@ -92,7 +92,7 @@ export function MembersPanel({
                             profile?.default_currency ?? "USD",
                           )}
                     </td>
-                    <td className="py-3.5 pr-4 pl-2 text-right">
+                    <td className="py-1.5 pr-3 pl-1 text-right">
                       {/* Editing a membership - the role, the department, the
                           approval limit - is a screen this build does not have
                           yet, so the control that would open it is disabled

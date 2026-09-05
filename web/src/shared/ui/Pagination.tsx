@@ -29,14 +29,14 @@ export function Pagination({
   return (
     <nav
       aria-label="Pagination"
-      className="flex items-center justify-between border-t border-line-soft px-5 py-3"
+      className="flex items-center justify-between border-t border-line-soft px-4 py-2"
     >
       <Button variant="secondary" onClick={onPrevious} disabled={!hasPrevious || busy}>
         Previous
       </Button>
       {/* aria-live so a screen reader is told the page changed; the table
           itself gives no such signal when its rows are replaced. */}
-      <span aria-live="polite" className="text-sm text-muted">
+      <span aria-live="polite" className="text-[13px] text-muted">
         Page {page}
       </span>
       <Button variant="secondary" onClick={onNext} disabled={!hasNext || busy}>

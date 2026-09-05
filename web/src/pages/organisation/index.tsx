@@ -68,6 +68,15 @@ export function OrganisationPage() {
         {tab === "departments" && <DepartmentManager />}
         {tab === "subscriptions" && <SubscriptionsPanel />}
       </div>
+
+      {/* The one flourish on the screen. It says nothing, which is the point:
+          it sits where a table would otherwise trail off into empty page. */}
+      <p
+        aria-hidden="true"
+        className="mt-16 hidden text-right text-[10px] tracking-[0.22em] text-faint/60 uppercase lg:block"
+      >
+        A more capable tomorrow.
+      </p>
     </div>
   );
 }

@@ -30,7 +30,7 @@ export function ApprovalsPage() {
         }${unlimited ? "." : ", up to your approval limit."}`}
       />
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
       {page.error && (
         <ErrorNotice
           title="Could not load the queue"

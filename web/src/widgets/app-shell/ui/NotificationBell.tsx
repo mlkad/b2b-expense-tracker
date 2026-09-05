@@ -41,7 +41,7 @@ export function NotificationBell() {
       to="/approvals"
       aria-label={label}
       title={label}
-      className="relative grid size-9 place-items-center rounded-lg text-muted transition-colors hover:bg-elevated hover:text-fg"
+      className="relative grid size-8 place-items-center rounded-lg text-muted transition-colors hover:bg-elevated hover:text-fg"
     >
       <BellIcon className="size-5" />
       {waiting > 0 && (

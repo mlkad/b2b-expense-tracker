@@ -2,6 +2,7 @@ import type { BudgetConsumption } from "@/entities/budget";
 import { formatDate } from "@/shared/lib/format";
 import { formatBasisPoints, formatMoney } from "@/shared/lib/money";
 import { Card } from "@/shared/ui/kit";
+import { MoreIcon } from "@/shared/ui/icons";
 import { Monogram } from "@/shared/ui/Monogram";
 
 export function BudgetEnvelope({ envelope }: { envelope: BudgetConsumption }) {
@@ -19,20 +20,32 @@ export function BudgetEnvelope({ envelope }: { envelope: BudgetConsumption }) {
       : "bg-accent-strong";
 
   return (
-    <Card className="p-5">
+    <Card className="p-4">
       <div className="flex items-start gap-3">
-        <Monogram name={name} className="size-11 rounded-xl text-base" />
+        <Monogram name={name} className="size-9 rounded-lg text-sm" />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-[15px] font-semibold">{name}</h2>
-          <p className="mt-0.5 text-xs text-faint">
+          <h2 className="truncate text-[14px] font-semibold">{name}</h2>
+          <p className="mt-0.5 text-[11px] text-faint">
             {formatDate(envelope.period_start)} – {formatDate(envelope.period_end)}
           </p>
         </div>
+        {/* Editing a budget's ceiling or its period is a screen this build does
+            not have yet, so the control that would open it is disabled rather
+            than absent - a button that appears later shifts the whole card. */}
+        <button
+          type="button"
+          disabled
+          aria-label={`Manage the ${name} budget (not available yet)`}
+          title="Editing a budget is not available yet"
+          className="-mt-1 -mr-1 grid size-7 shrink-0 cursor-not-allowed place-items-center rounded-md text-faint/50"
+        >
+          <MoreIcon className="size-4" />
+        </button>
       </div>
 
-      <p className="mt-5 text-[26px] leading-none font-semibold tabular-nums">
+      <p className="mt-4 text-[22px] leading-none font-semibold tabular-nums">
         {formatMoney(envelope.consumed)}
-        <span className="ml-1.5 text-sm font-normal text-faint">
+        <span className="ml-1.5 text-[13px] font-normal text-faint">
           of {formatMoney(envelope.budget)}
         </span>
       </p>
@@ -46,12 +59,12 @@ export function BudgetEnvelope({ envelope }: { envelope: BudgetConsumption }) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-label={`${name} budget used`}
-        className="mt-4 h-2 w-full overflow-hidden rounded-full bg-elevated"
+        className="mt-3.5 h-1.5 w-full overflow-hidden rounded-full bg-elevated"
       >
         <div className={`h-full rounded-full ${fill}`} style={{ width: `${usage}%` }} />
       </div>
 
-      <div className="mt-2.5 flex items-center justify-between text-xs">
+      <div className="mt-2 flex items-center justify-between text-[11px]">
         <span className={overspent ? "font-medium text-tone-danger-fg" : "text-muted"}>
           {formatBasisPoints(envelope.usage_bps)} used
           {envelope.breached && !overspent && " · past the alert threshold"}
@@ -66,7 +79,7 @@ export function BudgetEnvelope({ envelope }: { envelope: BudgetConsumption }) {
         </span>
       </div>
 
-      <p className="mt-3 border-t border-line-soft pt-3 text-xs text-faint">
+      <p className="mt-3 border-t border-line-soft pt-2.5 text-[11px] text-faint">
         {envelope.claim_count} {envelope.claim_count === 1 ? "claim" : "claims"} · alerts at{" "}
         {formatBasisPoints(envelope.alert_threshold_bps)}
       </p>

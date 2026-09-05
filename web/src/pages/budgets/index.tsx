@@ -8,7 +8,7 @@ import { ApiError } from "@/shared/api";
 import { Button, Card, EmptyState, ErrorNotice, SkeletonRows } from "@/shared/ui/kit";
 import { PageHeader } from "@/shared/ui/PageHeader";
 import { PlusIcon } from "@/shared/ui/icons";
-import { BudgetEnvelope } from "@/widgets/budget-envelope";
+import { BudgetEnvelope, BudgetPoster } from "@/widgets/budget-envelope";
 
 export function BudgetsPage() {
   const profile = useProfile();
@@ -33,7 +33,7 @@ export function BudgetsPage() {
         }
       />
 
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-4">
 
       {consumption.error && (
         <ErrorNotice
@@ -66,6 +66,8 @@ export function BudgetsPage() {
           {envelopes.map((envelope) => (
             <BudgetEnvelope key={envelope.budget_id} envelope={envelope} />
           ))}
+          {/* Only when the grid would otherwise end on a hole. */}
+          {envelopes.length % 2 === 1 && <BudgetPoster />}
         </div>
       )}
       </div>

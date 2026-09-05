@@ -41,7 +41,7 @@ export function Button({ variant = "primary", busy, disabled, children, classNam
       // reader is told the control is working without the accessible name
       // changing underneath the user.
       aria-busy={busy || undefined}
-      className={`inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-2 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors disabled:cursor-not-allowed ${VARIANTS[variant]} ${className}`}
       {...rest}
     >
       {busy && <Spinner />}
@@ -72,8 +72,8 @@ export function Field({ label, htmlFor, error, hint, children }: FieldProps) {
   const errorId = error ? `${htmlFor}-error` : undefined;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={htmlFor} className="text-xs font-medium text-muted">
+    <div className="flex flex-col gap-1">
+      <label htmlFor={htmlFor} className="text-[11px] font-medium text-muted">
         {label}
       </label>
       {children}
@@ -105,7 +105,7 @@ const CARET =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a39fb0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")";
 
 const CONTROL =
-  "w-full rounded-lg border bg-surface px-3 py-2 text-sm text-fg outline-none transition-colors placeholder:text-faint hover:border-line focus:border-accent-strong";
+  "w-full rounded-md border bg-surface px-2.5 py-1 text-[13px] text-fg outline-none transition-colors placeholder:text-faint hover:border-line focus:border-accent-strong";
 
 export function TextInput({ invalid, className = "", ...rest }: InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }) {
   return (
@@ -147,7 +147,7 @@ export type Tone = keyof typeof TONES;
 export function Badge({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${TONES[tone]}`}
+      className={`inline-flex items-center rounded-full px-2 py-px text-[11px] font-medium whitespace-nowrap ${TONES[tone]}`}
     >
       {children}
     </span>
@@ -171,7 +171,7 @@ export function ErrorNotice({ title, detail, traceId }: { title: string; detail?
   return (
     <div
       role="alert"
-      className="rounded-xl border border-tone-danger-fg/25 bg-tone-danger/60 px-4 py-3 text-sm"
+      className="rounded-lg border border-tone-danger-fg/25 bg-tone-danger/60 px-3.5 py-2.5 text-[13px]"
     >
       <p className="font-medium text-tone-danger-fg">{title}</p>
       {detail && <p className="mt-1 text-fg/90">{detail}</p>}
@@ -189,7 +189,7 @@ export function ErrorNotice({ title, detail, traceId }: { title: string; detail?
  */
 export function EmptyState({ title, detail, action }: { title: string; detail?: string; action?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center gap-2 px-6 py-14 text-center">
+    <div className="flex flex-col items-center gap-1.5 px-6 py-12 text-center">
       <p className="text-sm font-medium text-fg">{title}</p>
       {detail && <p className="max-w-sm text-sm text-muted">{detail}</p>}
       {action && <div className="mt-2">{action}</div>}
@@ -208,7 +208,7 @@ export function SkeletonRows({ rows = 5, columns = 4 }: { rows?: number; columns
   return (
     <div aria-hidden="true" className="divide-y divide-line-soft">
       {Array.from({ length: rows }, (_, r) => (
-        <div key={r} className="flex gap-4 px-5 py-4">
+        <div key={r} className="flex gap-4 px-4 py-2">
           {Array.from({ length: columns }, (_, c) => (
             <div key={c} className="h-4 flex-1 animate-pulse rounded bg-elevated" />
           ))}
@@ -228,7 +228,7 @@ export function SkeletonRows({ rows = 5, columns = 4 }: { rows?: number; columns
 export function TableHead({ children }: { children: ReactNode }) {
   return (
     <thead>
-      <tr className="border-b border-line-soft text-left text-[11px] font-medium tracking-[0.08em] text-faint uppercase">
+      <tr className="border-b border-line-soft text-left text-[10px] font-medium tracking-[0.09em] text-faint uppercase">
         {children}
       </tr>
     </thead>

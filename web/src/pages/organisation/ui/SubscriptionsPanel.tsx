@@ -53,19 +53,19 @@ export function SubscriptionsPanel() {
           <EmptyState title="Nothing tracked yet" />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[40rem] text-sm">
+            <table className="w-full min-w-[40rem] text-[13px]">
               <caption className="sr-only">Tracked vendor subscriptions</caption>
               <TableHead>
-                <th scope="col" className="py-3 pr-4 pl-5 font-medium">Vendor</th>
-                <th scope="col" className="px-4 py-3 font-medium">Cadence</th>
-                <th scope="col" className="px-4 py-3 font-medium">Next charge</th>
-                <th scope="col" className="px-4 py-3 text-right font-medium">Amount</th>
-                <th scope="col" className="px-4 py-3 pr-5 text-right font-medium">Per year</th>
+                <th scope="col" className="py-2 pr-3 pl-4 font-medium">Vendor</th>
+                <th scope="col" className="px-3 py-2 font-medium">Cadence</th>
+                <th scope="col" className="px-3 py-2 font-medium">Next charge</th>
+                <th scope="col" className="px-3 py-2 text-right font-medium">Amount</th>
+                <th scope="col" className="px-3 py-2 pr-4 text-right font-medium">Per year</th>
               </TableHead>
               <tbody className="divide-y divide-line-soft">
                 {(data?.items ?? []).map((sub) => (
                   <tr key={sub.id} className="transition-colors hover:bg-surface/70">
-                    <td className="py-3.5 pr-4 pl-5">
+                    <td className="py-1.5 pr-3 pl-4">
                       <span className="flex items-center gap-2.5">
                         <Monogram name={sub.vendor} />
                         <span>
@@ -76,12 +76,12 @@ export function SubscriptionsPanel() {
                         </span>
                       </span>
                     </td>
-                    <td className="px-4 py-3.5 text-muted capitalize">{sub.cadence}</td>
-                    <td className="px-4 py-3.5 text-muted">{formatDate(sub.next_charge_on)}</td>
-                    <td className="px-4 py-3.5 text-right tabular-nums">
+                    <td className="px-3 py-1.5 text-muted capitalize">{sub.cadence}</td>
+                    <td className="px-3 py-1.5 text-muted">{formatDate(sub.next_charge_on)}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
                       {formatMoney(sub.amount)}
                     </td>
-                    <td className="px-4 py-3.5 pr-5 text-right font-medium tabular-nums">
+                    <td className="px-3 py-1.5 pr-4 text-right font-medium tabular-nums">
                       {formatMinor(sub.annualised_minor, currency)}
                     </td>
                   </tr>

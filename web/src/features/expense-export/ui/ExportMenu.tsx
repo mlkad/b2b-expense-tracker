@@ -70,7 +70,7 @@ export function ExportMenu({
       {/* A label, not a control: the three formats beside it are the controls,
           and hiding them behind a disclosure would add a click to every export
           to save 90 pixels. */}
-      <span className="hidden items-center gap-1 rounded-lg border border-line-soft px-3 py-2 text-sm text-muted sm:inline-flex">
+      <span className="hidden items-center gap-1 rounded-lg border border-line-soft px-3 py-1.5 text-[13px] text-muted sm:inline-flex">
         {failed ?? "Export"}
         <ChevronDownIcon className="size-3.5" />
       </span>
@@ -80,7 +80,7 @@ export function ExportMenu({
           type="button"
           disabled={busy !== null}
           onClick={() => void download(format)}
-          className="rounded-lg border border-line-soft px-3 py-2 text-xs font-medium tracking-wide text-muted uppercase transition-colors hover:border-line hover:bg-elevated hover:text-fg disabled:text-faint"
+          className="rounded-lg border border-line-soft px-2.5 py-1.5 text-[11px] font-medium tracking-wide text-muted uppercase transition-colors hover:border-line hover:bg-elevated hover:text-fg disabled:text-faint"
         >
           {busy === format ? "…" : format}
         </button>

@@ -43,13 +43,13 @@ export function ExpenseFilterBar() {
   const set = (patch: Partial<ExpenseFilters>) => setDraft((d) => ({ ...d, ...patch }));
 
   return (
-    <Card className="p-4">
-      <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+    <Card className="p-3">
+      <form className="flex flex-col gap-2.5" onSubmit={onSubmit}>
         {/* The free-text box spans the width and the structured filters sit
             under it, because they are different questions: one is "find this
             thing", the others are "narrow to this slice". */}
         <div className="relative">
-          <SearchIcon className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-faint" />
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
           <label htmlFor="q" className="sr-only">
             Search claims by merchant or description
           </label>
@@ -58,11 +58,11 @@ export function ExpenseFilterBar() {
             value={draft.q}
             placeholder="Search merchant or description..."
             onChange={(e) => set({ q: e.target.value })}
-            className="rounded-lg bg-elevated pl-10"
+            className="rounded-md bg-elevated py-1.5 pl-9"
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2 lg:grid-cols-5">
         <Field label="Status" htmlFor="status">
           <Select id="status" value={draft.status} onChange={(e) => set({ status: e.target.value })}>
             <option value="">Any</option>

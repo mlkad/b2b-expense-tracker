@@ -55,16 +55,16 @@ export function AccountMenu() {
         onClick={() => setOpen((was) => !was)}
         aria-expanded={open}
         aria-haspopup="menu"
-        className="flex items-center gap-2.5 rounded-lg py-1.5 pr-2 pl-1.5 transition-colors hover:bg-elevated"
+        className="flex items-center gap-2 rounded-lg py-1 pr-2 pl-1 transition-colors hover:bg-elevated"
       >
         <span
           aria-hidden="true"
-          className="grid size-9 shrink-0 place-items-center rounded-full bg-accent-strong text-xs font-semibold text-white"
+          className="grid size-8 shrink-0 place-items-center rounded-full bg-accent-strong text-[11px] font-semibold text-white"
         >
           {initialsOf(profile.full_name, profile.email)}
         </span>
         <span className="hidden text-left leading-tight sm:block">
-          <span className="block text-[13px] font-medium">{name}</span>
+          <span className="block text-[12.5px] font-medium leading-tight">{name}</span>
           <span className="block text-[11px] text-faint capitalize">{profile.role}</span>
         </span>
         <ChevronDownIcon className="size-4 text-faint" />

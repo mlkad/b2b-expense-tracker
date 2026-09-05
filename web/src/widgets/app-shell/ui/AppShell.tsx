@@ -72,29 +72,29 @@ export function AppShell() {
         Skip to content
       </a>
 
-      <aside className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r border-line-soft bg-rail lg:flex">
-        <div className="flex h-16 items-center gap-2.5 px-6">
+      <aside className="sticky top-0 hidden h-dvh w-52 shrink-0 flex-col border-r border-line-soft bg-rail lg:flex">
+        <div className="flex h-14 items-center gap-2.5 px-5">
           <LogoMark className="size-6 text-accent" />
           <span className="text-sm font-semibold tracking-tight">
             {profile?.tenant_name ?? "Expenses"}
           </span>
         </div>
 
-        <nav aria-label="Main" className="flex flex-col gap-0.5 px-3 py-2">
+        <nav aria-label="Main" className="flex flex-col gap-px px-2.5 py-1">
           {visible.map(({ to, label, icon: Glyph }) => (
             <NavLink
               key={to}
               to={to}
               end={to === "/"}
               className={({ isActive }) =>
-                `flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
+                `flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
                   isActive
                     ? "bg-elevated font-medium text-fg"
                     : "text-muted hover:bg-surface hover:text-fg"
                 }`
               }
             >
-              <Glyph className="size-[18px] shrink-0" />
+              <Glyph className="size-4 shrink-0" />
               {label}
             </NavLink>
           ))}
@@ -104,7 +104,7 @@ export function AppShell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-4 border-b border-line-soft bg-canvas/85 px-5 backdrop-blur-md sm:px-8">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-4 border-b border-line-soft bg-canvas/85 px-4 backdrop-blur-md sm:px-6">
           {/* The mark repeats here only where the sidebar is not on screen. */}
           <span className="flex items-center gap-2.5 lg:hidden">
             <LogoMark className="size-6 text-accent" />
@@ -119,7 +119,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main id="main" className="flex-1 px-5 py-8 sm:px-8">
+        <main id="main" className="flex-1 px-4 py-6 sm:px-6">
           <div className="mx-auto max-w-6xl">
             <Outlet />
           </div>
